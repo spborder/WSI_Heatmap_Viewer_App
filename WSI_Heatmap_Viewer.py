@@ -273,7 +273,7 @@ class Slide:
         if not self.counts_def_df is None:
             self.counts_def_df = pd.read_csv(self.counts_def_df)
 
-        self.counts = pd.read_csv(self.counts_path,index_col=0)
+        self.counts = pd.read_csv(self.counts_path,index_col=0,engine='python')
         self.cell_types = list(self.counts.index)
 
         if not self.counts_def_df is None:
@@ -508,7 +508,6 @@ class Slide:
 
 
         return {'polys':intersect_ftus, 'barcodes':intersect_barcodes, 'main_counts':intersect_counts, 'states':intersect_states}
-
 
 
 class SlideHeatVis:
@@ -992,9 +991,8 @@ class SlideHeatVis:
         return hover_text
         
 
-
-
-if __name__ == '__main__':
+#if __name__ == '__main__':
+def app():
 
     slide_name = 'XY01_IU-21-015F.svs'
     run_type = 'web'
@@ -1013,11 +1011,11 @@ if __name__ == '__main__':
     elif run_type == 'web':
         # For test deployment
         base_dir = os.getcwd()
-        slide_path = base_dir+'/assets/slide_info/'+slide_name
-        spot_path = slide_path.replace('.tif','_Large.xml')
-        counts_path = slide_path.replace('.tif','_cellfract.csv')
+        slide_path = base_dir+'/slide_info/'+slide_name
+        spot_path = slide_path.replace('.svs','_Large.xml')
+        counts_path = base_dir+'/slide_info/V10S15-103_'+slide_name.replace('.svs','_cellfract.csv')
         counts_def_path = slide_path.replace(slide_name,'Cell_SubTypes_Grouped.csv')
-        ftu_path = slide_path.replace('.tif','.geojson')
+        ftu_path = slide_path.replace('.svs','.geojson')
 
 
     
