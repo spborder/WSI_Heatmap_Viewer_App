@@ -1,0 +1,1048 @@
+"""
+
+Whole Slide Image heatmap generation and viewer for specific cell types using Ground Truth Spatial Transcriptomics
+
+"""
+
+import os
+import sys
+import pandas as pd
+import numpy as np
+import json
+
+from glob import glob
+
+from PIL import Image
+
+try:
+    import openslide
+except:
+    import tiffslide as openslide
+
+import lxml.etree as ET
+
+from tqdm import tqdm
+
+import shapely
+from shapely.geometry import Polygon, Point, shape
+from skimage.draw import polygon
+import geojson
+
+import plotly.express as px
+from plotly.subplots import make_subplots
+import plotly.graph_objects as go
+from matplotlib import cm
+
+from dash import dcc, ctx, Dash
+import dash_bootstrap_components as dbc
+from dash_extensions.enrich import DashProxy, html, Input, Output, MultiplexerTransform
+
+def gen_layout(cell_types,thumb):
+
+    # Header
+    header = dbc.Navbar(
+        dbc.Container([
+            dbc.Row([
+                dbc.Col(html.Img(id='logo',src=('./assets/Lab_Logo_white.png'),height='100px'),md='auto'),
+                dbc.Col([
+                    html.Div([
+                        html.H3('Whole Slide Image Cell Distribution'),
+                        html.P('Spatial Transcriptomics')
+                    ],id='app-title')
+                ],md=True,align='center')
+            ],align='center'),
+            dbc.Row([
+                dbc.Col([
+                    dbc.NavbarToggler(id='navbar-toggler'),
+                    dbc.Collapse(
+                        dbc.Nav([
+                            dbc.NavItem(
+                                dbc.Button(
+                                    "Cell Cards",
+                                    id='cell-cards-button',
+                                    outline=True,
+                                    color="primary",
+                                    href="https://cellcards.org/index.php",
+                                    style={"textTransform":"none"}
+                                )
+                            ),
+                            dbc.NavItem(
+                                dbc.Button(
+                                    "Lab Website",
+                                    id='lab-web-button',
+                                    outline=True,
+                                    color='primary',
+                                    href='https://github.com/SarderLab',
+                                    style={"textTransform":"none"}
+                                )
+                            )
+                        ],navbar=True),
+                    id="navbar-collapse",
+                    navbar=True)
+                ],
+                md=2)
+                ],
+            align='center')
+            ], fluid=True),
+        dark=True,
+        color="dark",
+        sticky="top"
+    )
+    
+    # View of WSI
+    wsi_view = [
+        dbc.Card(
+            id='wsi-card',
+            children=[
+                dbc.CardHeader("WSI Viewer"),
+                dbc.CardBody([
+                    html.Div(
+                        id='cell-heat-loader',
+                        children=[
+                            dcc.Loading(
+                                id="cell-loading",
+                                type="cube",
+                                children=[
+                                    dcc.Graph(
+                                        id="wsi-view",
+                                        figure=go.Figure())
+
+                                ]
+                            ),
+                            html.Div(
+                                id = 'current-hover'
+                            )
+                        ]
+                    ),
+                    html.Hr(),
+                    dcc.RadioItems(
+                        id= 'vis-types',
+                        options=[
+                            {'label':html.Div('Heatmap',style={'margin-right':'20px','padding-left':'15px'}),'value':'Heatmap'},
+                            {'label':html.Div('Spots',style={'margin-right':'20px','padding-left':'15px'}),'value':'Spots'},
+                            {'label':html.Div('FTUs',style={'margin-right':'20px','padding-left':'15px'}),'value':'FTUs'}
+                        ],
+                        value = 'Heatmap',
+                        inline = True
+                    )
+                ])
+            ]
+        )
+    ]
+
+    # Contents of tabs
+    thumbnail_select = dbc.Card([
+        dbc.CardBody(
+            [dbc.Label("Thumbnail View", html_for="thumb-img"),
+            dcc.Graph(
+                id="thumb-img",
+                figure=go.Figure(px.imshow(thumb))
+            )
+            ]
+        ),
+        dbc.CardFooter([
+            dbc.Label("ROI Size", html_for="roi-slider"),
+            dcc.Slider(
+                id="roi-slider",
+                min=5,
+                max=50,
+                step=5,
+                value=10
+            )
+        ])
+    ])
+
+    # Cell type proportions and cell state distributions
+    roi_pie = dbc.Card([
+        dbc.CardBody([
+            dbc.Label("ROI Cell Proportions", html_for="roi-pie"),
+            dcc.Graph(
+                id="roi-pie",
+                figure=go.Figure()
+            ),
+            html.Hr(),
+            dbc.Label("Selected Cell States",html_for="state-bar"),
+            dcc.Graph(
+                id="state-bar",
+                figure=go.Figure()
+            )
+        ])
+    ])
+
+    # Cell card graphic and hierarchy
+    cell_card = dbc.Card([
+        dbc.CardBody([
+            dbc.Label("Cell Graphic", html_for="cell-graphic"),
+            html.Img(
+                id = 'cell-graphic',
+                src = './assets/cell_graphics/default_cell_graphic.png',
+                height = '250px',
+                width = '500px'
+            ),
+            html.Hr(),
+            dbc.Label("Cell Hierarchy",html_for="cell-hierarchy"),
+            html.Img(
+                id = 'cell-hierarchy',
+                src = './assets/cell_graphics/default_cell_hierarchy.png',
+                height='350px',
+                width = '500px'
+            )
+        ]),
+        dbc.CardFooter(
+            dbc.Row([
+                dbc.Col([
+                    html.Div([
+                        html.P('Provided by cellcards.org')
+                    ])
+                ])
+            ])
+        )
+    ])
+    
+
+    # Tools for selecting regions, transparency, and cells
+    tools = [
+        dbc.Card(
+            id='tools-card',
+            children=[
+                dbc.CardHeader("Tools"),
+                dbc.CardBody([
+                    html.H6("Select Cell for Heatmap View",className="cell-select"),
+                    html.Div(
+                        id = "cell-select-div",
+                        children=[
+                            dcc.Dropdown(cell_types,cell_types[0],id='cell-drop')
+                        ]
+                    ),
+                    html.Hr(),
+                    dbc.Form([
+                        dbc.Row([
+                            dbc.Label(
+                                "Adjust Transparency of Heatmap",
+                                html_for="vis-slider"
+                            ),
+                            dcc.Slider(
+                                id='vis-slider',
+                                min=0,
+                                max=100,
+                                step=10,
+                                value=50
+                            )
+                        ]),
+                        dbc.Row([
+                            dbc.Tabs([
+                                dbc.Tab(thumbnail_select, label = "Thumbnail ROI"),
+                                dbc.Tab(roi_pie, label = "Cell Composition"),
+                                dbc.Tab(cell_card,label = "Cell Card")
+                            ])
+                        ])
+                    ])
+                ])
+            ]
+        )
+    ]
+
+    main_layout = html.Div([
+        header,
+        dbc.Container([
+            dbc.Row(
+                id="app-content",
+                children=[dbc.Col(wsi_view,md=6),dbc.Col(tools,md=6)]
+            )
+        ],fluid=True)
+    ])
+
+    return main_layout
+
+
+class Slide:
+    def __init__(self,
+                slide_path,
+                spot_path,
+                counts_path,
+                ftu_path,
+                ann_ids,
+                counts_def_df):
+
+        self.slide_path = slide_path
+        self.spot_path = spot_path
+        self.counts_path = counts_path
+        self.counts_def_df = counts_def_df
+        self.ftu_path = ftu_path
+        self.ann_ids = ann_ids
+        if not self.counts_def_df is None:
+            self.counts_def_df = pd.read_csv(self.counts_def_df)
+
+        self.counts = pd.read_csv(self.counts_path,index_col=0)
+        self.cell_types = list(self.counts.index)
+
+        if not self.counts_def_df is None:
+            self.counts_data = self.compress_counts()
+            self.cell_types = self.counts_data['main_cell_types'].columns.tolist()
+
+        self.slide = self.read_wsi()
+        self.dimensions = self.slide.dimensions
+        self.spots = self.read_spots()
+
+        # Reading FTUs from ftu_path if provided
+        if not self.ftu_path is None:
+            self.ftus = self.read_ftus()
+
+        self.thumb = self.get_thumbnail()
+        print(f'Got thumbnail')
+        if not os.path.exists(self.slide_path.replace('.svs','_thumb.png')):
+            self.thumb.save(self.slide_path.replace('.svs','_thumb.png'))
+
+    def compress_counts(self):
+        
+        sub_types_list = self.counts_def_df['Sub_Types'].tolist()
+        cell_states_list = self.counts_def_df['Cell_States'].tolist()
+
+        main_types_list = self.counts_def_df['Main_Types'].tolist()
+        
+        # Normalize to sum to 1
+        norm_counts = self.counts/self.counts.sum(axis=0)
+
+        slide_compressed_counts = {}
+        slide_compressed_counts['main_cell_types'] = pd.DataFrame()
+        
+        for m in range(0,len(main_types_list)):
+            main_name = main_types_list[m]
+            sub_list = sub_types_list[m].split('.')
+            state_list = cell_states_list[m].split('.')
+
+            slide_compressed_counts[main_name] = {}
+
+            sub_df = norm_counts.loc[norm_counts.index.isin(sub_list)]
+            sub_sum_df = sub_df.sum(axis=0)
+            if slide_compressed_counts['main_cell_types'].empty:
+                slide_compressed_counts['main_cell_types'] = pd.DataFrame(data = sub_sum_df.values,columns = [main_name],index=list(sub_sum_df.index))
+            else:
+                new_df = pd.DataFrame(data = sub_sum_df.values, columns = [main_name],index=list(sub_sum_df.index))
+                slide_compressed_counts['main_cell_types'] = pd.concat([slide_compressed_counts['main_cell_types'],new_df],axis=1)
+
+            pct_count_df = (sub_df/sub_sum_df).fillna(0)
+            slide_compressed_counts[main_name]['pct_subtypes'] = pct_count_df
+
+            state_pct_df = pct_count_df.copy()
+
+            # Setting the index of state percentages
+            #if self.use_all_states:
+            state_pct_df.index = [state_list[i] for i in range(len(state_list)) if sub_list[i] in list(state_pct_df.index)]
+
+            # Combining states with the same name
+            state_pct_df = state_pct_df.groupby(level=0).sum()
+            """
+            else:
+                # Combining cell states and re-naming
+                states_present = [state_list[i] for i in range(len(state_list)) if sub_list[i] in list(state_pct_df.index)]
+                state_pct_df.index = states_present
+
+                # Defining new index from given states to include
+                new_idx = list(self.use_states.keys())
+                for new in new_idx:
+                    # Replacing the index values in the data frame if that index value is in the values list for a given new index key
+                    state_pct_df.index = [new if i in self.use_states[new] else i for i in list(state_pct_df.index)]
+
+                # Drop remaining states that aren't in the final index
+                if any([i not in new_idx for i in list(state_pct_df.index)]):
+                    state_pct_df = state_pct_df.drop([i for i in list(state_pct_df.index) if i not in new_idx])
+
+                # Combining states with the same name
+                state_pct_df = state_pct_df.groupby(level=0).sum()
+
+                # Adding row(s) of zeros to reach final index
+                if len(list(state_pct_df.index))<len(new_idx):
+                    add_row_names = [i for i in new_idx if i not in state_pct_df.index]
+                    for add in add_row_names:
+                        added_df = pd.DataFrame([[0]*state_pct_df.shape[1]], columns = state_pct_df.columns, index=[add])
+                        state_pct_df = pd.concat([state_pct_df,added_df],axis=0)
+            """
+
+            # Re-normalizing (if certain cell states are removed) (replacing inf/nan with zero (for structures that have a sum of zero across included cell states))
+            state_pct_df = (state_pct_df/state_pct_df.sum(axis=0)).fillna(0)
+
+            # Sorting index so each one is consistent
+            state_pct_df = state_pct_df.sort_index()
+
+            slide_compressed_counts[main_name]['pct_states'] = state_pct_df
+
+        # Adding in rows for missing main cell types
+        if slide_compressed_counts['main_cell_types'].shape[1]<len(main_types_list):
+            add_column_names = [i for i in main_types_list if i not in slide_compressed_counts['main_cell_types'].columns]
+            for add in add_column_names:
+                added_df = pd.DataFrame({add:[0]*slide_compressed_counts['main_cell_types'].shape[0]},index=list(slide_compressed_counts['main_cell_types'].index))
+                slide_compressed_counts['main_cell_types'] = pd.concat([slide_compressed_counts['main_cell_types'],added_df],axis=1)
+
+        slide_compressed_counts['main_cell_types'] = slide_compressed_counts['main_cell_types'].sort_index(axis=1)
+    
+        return slide_compressed_counts
+
+    def read_wsi(self):
+        return openslide.OpenSlide(self.slide_path)
+
+    def get_thumbnail(self):
+
+        if not os.path.exists(self.slide_path.replace('.svs','_thumb.png')):
+            # Returns thumbnail PIL Image for a given slide with size (512,512)
+            return self.slide.get_thumbnail((256,256))
+        else:
+            return Image.open(self.slide_path.replace('.svs','_thumb.png'))
+
+    def read_xml(self,filepath):
+        return ET.parse(filepath)
+
+    def read_regions(self,region):
+        Vertices = region.findall('./Vertices/Vertex')
+
+        coords = []
+        for Vertex in Vertices:
+            coords.append((np.float32(Vertex.attrib['X']),np.float32(Vertex.attrib['Y'])))
+
+        if len(coords)>2:
+            reg_poly = Polygon(coords)
+            barcode = region.attrib['Text']
+
+            return reg_poly,barcode
+        else:
+            return None, None
+
+    def read_spots(self):
+
+        spot_polys = {}
+        spot_polys['polygons'] = []
+        spot_polys['barcodes'] = []
+
+        spots = self.read_xml(self.spot_path).getroot().findall('Annotation[@Id="1"]/Regions/Region')
+        for spot in tqdm(spots,desc='Parsing spots'):
+
+            poly,barcode = self.read_regions(spot)
+
+            if not poly==None:
+                spot_polys['polygons'].append(poly)
+                spot_polys['barcodes'].append(barcode)
+
+        return spot_polys
+
+    def get_image(self,poly_box):
+        
+        # Returns PIL RGBA image from patch coordinates
+        image = self.slide.read_region((int(poly_box[0]),int(poly_box[1])),0,(int(poly_box[2]-poly_box[0]),int(poly_box[3]-poly_box[1])))
+
+        return image
+
+    def find_intersecting_spots(self,box_poly):
+        
+        # Find intersecting spots given bounding box coordinates list
+        #box_poly = Polygon([(poly_box[0],poly_box[3]),(poly_box[0],poly_box[1]),(poly_box[2],poly_box[1]),(poly_box[2],poly_box[3]),(poly_box[0],poly_box[3])])
+        intersect_idxes = [i for i in range(0,len(self.spots['polygons'])) if self.spots['polygons'][i].intersects(box_poly)]
+
+        intersect_barcodes = [self.spots['barcodes'][i] for i in intersect_idxes]
+        intersect_spots = [self.spots['polygons'][i] for i in intersect_idxes]
+
+        return intersect_spots, intersect_barcodes
+
+    def read_ftus(self):
+
+        if '.xml' in self.ftu_path:
+            ftu_polys = {}
+            ftu_tree = self.read_xml(self.ftu_path).getroot()
+            
+            for ann,id in self.ann_ids.items():
+                
+                ftu_polys[ann] = {}
+                ftu_polys[ann]['polygons'] = []
+                ftu_polys[ann]['barcodes'] = []
+
+                ftus = ftu_tree.findall('Annotation[@Id="'+str(id)+'"]/Regions/Region')
+                for idx,struct in tqdm(enumerate(ftus),desc = f'Parsing FTUs: {ann}'):
+
+                    poly, barcode = self.read_regions(struct)
+
+                    if not poly==None:
+                        
+                        ftu_polys[ann]['polygons'].append(poly)
+                        ftu_polys[ann]['barcodes'].append(f'{ann}_{idx}')
+
+        elif '.geojson' in self.ftu_path:
+
+            # Reading files in geojson format
+            with open(self.ftu_path) as f:
+                geojson_polys = geojson.load(f)
+
+            # Parsing through info stored in geojson file
+            ftu_polys = {}
+            poly_ids = []
+            for f in geojson_polys:
+                poly_ids.append(f['properties']['label'])
+
+            poly_names = np.unique([i.split('_')[0] for i in poly_ids])
+            self.ann_ids = {}
+            for p in poly_names:
+                
+                self.ann_ids[p] = []
+
+                poly_idx = [i for i in range(len(poly_ids)) if p in poly_ids[i]]
+                p_features = [geojson_polys[i] for i in poly_idx]
+
+                ftu_polys[p] = {}
+                ftu_polys[p]['polygons'] = [shape(i['geometry']) for i in p_features]
+                ftu_polys[p]['barcodes'] = [i['properties']['label'] for i in p_features]
+                ftu_polys[p]['main_counts'] = [i['properties']['Main_Cell_Types'] for i in p_features]
+                ftu_polys[p]['cell_states'] = [i['properties']['Cell_States'] for i in p_features]
+
+        return ftu_polys
+
+    def find_intersecting_ftu(self,box_poly):
+
+        intersect_barcodes = []
+        intersect_ftus = []
+        intersect_counts = []
+        intersect_states = []
+        for ann in list(self.ann_ids.keys()):
+            intersect_idxes= [i for i in range(0,len(self.ftus[ann]['polygons'])) if self.ftus[ann]['polygons'][i].intersects(box_poly)]
+            intersect_barcodes.extend([self.ftus[ann]['barcodes'][i] for i in intersect_idxes])
+            intersect_ftus.extend([self.ftus[ann]['polygons'][i] for i in intersect_idxes])
+            intersect_counts.extend([self.ftus[ann]['main_counts'][i] for i in intersect_idxes])
+            intersect_states.extend([self.ftus[ann]['cell_states'][i] for i in intersect_idxes])
+
+
+        return {'polys':intersect_ftus, 'barcodes':intersect_barcodes, 'main_counts':intersect_counts, 'states':intersect_states}
+
+
+
+class SlideHeatVis:
+    def __init__(self,
+                app,
+                layout,
+                wsi,
+                cell_graphics_key):
+                
+        self.app = app
+        self.app.title = "WSI Heatmap Viewer"
+        self.app.layout = layout
+
+        self.wsi = wsi
+        # size here is in the form [width,height]
+        self.wsi_size = self.wsi.dimensions
+        print(f'wsi_size: {self.wsi_size}')
+
+        self.cell_graphics_key = json.load(open(cell_graphics_key))
+
+        self.original_thumb = self.wsi.thumb.copy()
+        self.roi_size = 2
+
+        # FTU settings
+        self.ftus = list(self.wsi.ann_ids.keys())
+        self.ftu_boundary_thickness = 10
+        # Random color generation to start (maybe add the ability to customize these later)
+        self.ftu_color = {
+            ann_name:[np.random.randint(0,255), np.random.randint(0,255), np.random.randint(0,255)]
+            for ann_name in self.ftus
+        }
+        
+        self.patch_size = self.roi_size*30
+        self.batch_size = 16
+        self.current_cell = 'PT'
+        self.current_barcodes = []
+
+        # Colormap settings (customize later)
+        self.color_map = cm.get_cmap('jet')
+
+        # Initial region overlay on thumbnail image
+        initial_coords = [0,0]
+        self.square_roi = self.gen_square(initial_coords)
+
+        self.app.callback(
+            [Output('thumb-img','figure'),Output('wsi-view','figure'),
+            Output('roi-pie','figure'),Output('state-bar','figure'),
+            Output('cell-graphic','src'),Output('cell-hierarchy','src')],
+            [Input('thumb-img','clickData'), Input('wsi-view','clickData'),
+            Input('cell-drop','value'),Input('vis-slider','value'),
+            Input('roi-slider','value'),Input('vis-types','value')]
+        )(self.put_square)
+
+        self.app.callback(
+            Output('state-bar','figure'),
+            Input('roi-pie','clickData')
+        )(self.update_state_bar)
+
+        self.app.callback(
+            Output('current-hover','children'),
+            Input('wsi-view','hoverData')
+        )(self.get_hover)
+        
+        self.app.run_server(debug=True,use_reloader=True,port=8000)
+
+    def gen_square(self,center_coords):
+
+        # Given a center coordinate (x,y), generate a square of set size for pasting on thumbnail image
+        square_mask = np.zeros((256,256))
+        square_center = [i if i-(self.roi_size/2)>=0 else int(self.roi_size/2) for i in center_coords]
+
+        square_poly = Polygon([
+            (square_center[0]-(self.roi_size/2),square_center[1]+(self.roi_size/2)),
+            (square_center[0]-(self.roi_size/2),square_center[1]-(self.roi_size/2)),
+            (square_center[0]+(self.roi_size/2),square_center[1]-(self.roi_size/2)),
+            (square_center[0]+(self.roi_size/2),square_center[1]+(self.roi_size/2)),
+            (square_center[0]-(self.roi_size/2),square_center[1]+(self.roi_size/2))
+            ])
+
+        x_coords = [int(i[0]) for i in list(square_poly.exterior.coords)]
+        y_coords = [int(i[1]) for i in list(square_poly.exterior.coords)]
+        cc,rr = polygon(y_coords,x_coords,(square_mask.shape[1],square_mask.shape[0]))
+        square_mask[cc,rr] = 1
+        square_mask_3d = np.stack((square_mask,square_mask,square_mask),axis=2)
+        square_mask_3d[:,:,0]*=255
+        square_mask_3d[:,:,1]*=0
+        square_mask_3d[:,:,2]*=0
+
+        return square_mask_3d, square_poly
+ 
+    def update_square_location(self, click_coords):
+        
+        new_square, square_center = self.gen_square(click_coords)
+
+        zero_mask = np.where(np.sum(new_square.copy(),axis=2)==0,0,255)
+        square_mask_4d = np.concatenate((new_square,zero_mask[:,:,None]),axis=-1)
+        rgba_mask = Image.fromarray(np.uint8(square_mask_4d),'RGBA')
+
+        annotated_thumb = self.original_thumb.copy()
+        annotated_thumb.paste(rgba_mask,mask=rgba_mask)
+
+        return annotated_thumb, square_center
+
+    def gen_patch_centers(self,image):
+        # Creating patch coordinates on wsi view
+        square_dim = int(self.batch_size**0.5)
+        img_max_y, img_max_x = np.shape(image)[0], np.shape(image)[1]
+
+        min_x, max_x = int(self.patch_size/2), img_max_x-int(self.patch_size/2)
+        min_y, max_y = int(self.patch_size/2), img_max_y-int(self.patch_size/2)
+
+        center_x_base = np.linspace(min_x,max_x,num=square_dim).astype(int).tolist()
+        center_y_base = np.linspace(min_y,max_y,num=square_dim).astype(int).tolist()
+
+        center_x_base = [i if i>=0 else 0 for i in center_x_base]
+        center_y_base = [i if i>=0 else 0 for i in center_y_base]
+
+        center_x = []
+        center_y = []
+        for i in range(square_dim):
+            center_x.extend([center_x_base[i]]*square_dim)
+            center_y.extend(center_y_base)
+        
+        batch_centers = list(zip(center_x,center_y))
+
+        return batch_centers
+
+    def make_cell_mask(self,poly_list,cell_vis_mask,wsi_vis_bounds,weight_list,shape_type,ftu_names = None):
+
+        if shape_type == 'ftus':
+            outline_mask_2D = np.zeros(np.shape(cell_vis_mask))
+            outline_mask_3D = np.stack((outline_mask_2D,outline_mask_2D,outline_mask_2D),axis=-1)
+        
+        for p,w in tqdm(zip(poly_list,weight_list),total = len(poly_list)):
+            x_coords = [int(i[0]-wsi_vis_bounds[0]) for i in list(p.exterior.coords)]
+            y_coords = [int(i[1]-wsi_vis_bounds[1]) for i in list(p.exterior.coords)]
+            
+            intermed_mask = np.empty(np.shape(cell_vis_mask))
+            intermed_mask[:] = np.nan
+
+            if shape_type == 'patch':
+                min_x = min(x_coords)
+                max_x = max(x_coords)
+                min_y = min(y_coords)
+                max_y = max(y_coords)
+
+                intermed_mask[min_y:max_y,min_x:max_x] = w
+
+            elif shape_type == 'spots':
+                cc,rr = polygon(y_coords,x_coords,(np.shape(cell_vis_mask)[0],np.shape(cell_vis_mask)[1]))
+                intermed_mask[cc,rr] = w
+
+            elif shape_type == 'ftus':
+                # making shape outline
+                outline = p.buffer(self.ftu_boundary_thickness)
+                outline_x = [int(i[0]-wsi_vis_bounds[0]) for i in list(outline.exterior.coords)]
+                outline_y = [int(i[1]-wsi_vis_bounds[1]) for i in list(outline.exterior.coords)]
+
+                cc_o,rr_o = polygon(outline_y,outline_x,(np.shape(cell_vis_mask)[0],np.shape(cell_vis_mask)[1]))
+
+                # making innerpolygon
+                cc,rr = polygon(y_coords,x_coords,(np.shape(cell_vis_mask)[0],np.shape(cell_vis_mask)[1]))
+                intermed_mask[cc,rr] = w
+
+                outline_mask_3D[cc_o,rr_o,:] = self.ftu_color[ftu_names[poly_list.index(p)].split('_')[0]]
+                outline_mask_3D[cc,rr,:] = [0,0,0]
+
+            cell_vis_mask = np.nanmean(np.stack((cell_vis_mask,intermed_mask),axis=-1),axis=-1)
+
+        if shape_type == 'ftus':
+            return cell_vis_mask, outline_mask_3D
+        else:
+            return cell_vis_mask
+
+    def gen_cell_vis(self,cell_val,vis_val):
+        
+        # Getting intersecting spot polygons and barcodes
+        intersect_spots, intersect_barcodes = self.wsi.find_intersecting_spots(self.current_projected_poly)
+
+        self.current_spots = intersect_spots
+        self.current_barcodes = intersect_barcodes
+        intersect_counts = self.wsi.counts_data['main_cell_types'][self.wsi.counts_data['main_cell_types'].index.isin(intersect_barcodes)]
+
+        self.current_counts = intersect_counts
+        self.current_intersect_weight = [(spt.intersection(self.current_projected_poly).area)/(spt.area) for spt in self.current_spots]
+
+        # Getting current cell value
+        if not intersect_counts.empty:
+            #intersecting_cell_vals = intersect_counts.loc[cell_val]
+            intersecting_cell_vals = intersect_counts[cell_val]
+
+        # Getting dimensions of proj_poly
+        proj_bounds = list(self.current_projected_poly.bounds)
+        cell_vis_overlay = np.empty(((int(proj_bounds[3]-proj_bounds[1]),int(proj_bounds[2]-proj_bounds[0]))))
+        cell_vis_overlay[:] = np.nan
+
+        if len(intersect_spots)>0:
+            # Making a new patch for each point in self.patch_centers
+
+            if self.current_vis_type == 'Heatmap':
+                patch_list = []
+                weight_list = []
+                for center in self.patch_centers:
+                    patch_poly = shapely.geometry.box(
+                        center[0]-(self.patch_size/2)+proj_bounds[0],
+                        center[1]-(self.patch_size/2)+proj_bounds[1],
+                        center[0]+(self.patch_size/2)+proj_bounds[0],
+                        center[1]+(self.patch_size/2)+proj_bounds[1],
+                        center[0]-(self.patch_size/2)+proj_bounds[0]
+                        )
+                    intersect_weight = []
+                    for spt in intersect_spots:
+                        intersect_weight.append((spt.intersection(patch_poly).area)/(patch_poly.area))
+
+                    mult_cell_vals = (intersecting_cell_vals*intersect_weight).sum()
+
+                    patch_list.append(patch_poly)
+                    weight_list.append(mult_cell_vals)
+
+                cell_mask = self.make_cell_mask(patch_list,cell_vis_overlay,proj_bounds,weight_list,'patch')
+            
+            elif self.current_vis_type == 'Spots':
+
+                cell_mask = self.make_cell_mask(self.current_spots,cell_vis_overlay,proj_bounds,intersecting_cell_vals.tolist(),'spots')
+
+            elif self.current_vis_type == 'FTUs':
+                counts = [i[cell_val] for i in self.current_ftus['main_counts']]
+                cell_mask, outlines = self.make_cell_mask(self.current_ftus['polys'],cell_vis_overlay,proj_bounds,counts,'ftus',self.current_ftus['barcodes'])
+                
+        else:
+            cell_mask = np.zeros((np.shape(cell_vis_overlay)))
+        
+        self.current_cell_distribution = cell_mask
+
+        cell_heatmap = cell_mask.copy()
+        cell_heatmap[np.where(np.isnan(cell_heatmap))] = 0
+
+        color_cell_heatmap = np.uint8(255*self.color_map(np.uint8(255*cell_heatmap))[:,:,0:3])
+        zero_mask = np.where(cell_heatmap==0,0,vis_val)
+        cell_mask_4d = np.concatenate((color_cell_heatmap,zero_mask[:,:,None]),axis=-1)
+        self.current_vis = Image.fromarray(np.uint8(cell_mask_4d)).convert('RGBA')
+
+        heatmap = self.current_vis.copy()
+
+        if self.current_vis_type == 'FTUs':
+
+            # overlapping ftu boundaries
+            zero_mask_outlines = np.where(outlines.sum(axis=-1)==0,0,255)
+            outline_mask_4D = np.concatenate((outlines,zero_mask_outlines[:,:,None]),axis=-1)
+            outline_mask_4D = Image.fromarray(np.uint8(outline_mask_4D)).convert('RGBA')
+
+            self.current_ftu_outlines = outline_mask_4D
+
+        return heatmap
+
+    def gen_projected_poly(self):
+
+        projected_coords = list(self.current_square_poly.bounds)
+        proj_x = [int(projected_coords[0]*(self.wsi_size[0]/256)),int(projected_coords[2]*(self.wsi_size[0]/256))]
+        proj_y = [int(projected_coords[1]*(self.wsi_size[1]/256)),int(projected_coords[3]*(self.wsi_size[1]/256))]
+
+        projected_poly = Polygon([
+            (proj_x[0],proj_y[1]),
+            (proj_x[0],proj_y[0]),
+            (proj_x[1],proj_y[0]),
+            (proj_x[1],proj_y[1]),
+            (proj_x[0],proj_y[1])
+        ])
+
+        return projected_poly
+
+    def gen_roi_pie(self):
+
+        # Getting current counts and using those to generate a relative pie-chart
+        if isinstance(self.current_counts,pd.DataFrame):
+            combined_counts = self.current_counts.sum(axis=0).to_frame()
+            combined_counts.columns = ['Current ROI']
+            combined_counts = combined_counts.reset_index()
+        else:
+            combined_counts = self.current_counts.to_frame()
+            combined_counts.columns = ['Current ROI']
+            combined_counts = combined_counts.reset_index()
+        
+        combined_counts['Current ROI'] = combined_counts['Current ROI']/combined_counts['Current ROI'].sum()
+        
+        # Currently just doing top 5
+        #combined_counts = combined_counts[combined_counts['Current ROI']>0]
+        combined_counts = combined_counts.sort_values(by=['Current ROI'],ascending=False).iloc[0:5,:]
+
+        cell_types_pie = px.pie(combined_counts,values='Current ROI',names = 'index')
+
+        # By default just getting the top cell type
+        top_cell = combined_counts['index'].tolist()[0]
+
+        # Getting pct_states
+        pct_states = self.wsi.counts_data[top_cell]['pct_states']
+        # Getting spots from columns
+        intersect_states = pct_states[pct_states.columns.intersection(self.current_barcodes)]
+        aggregated_states = intersect_states.sum(axis=1).to_frame()
+        aggregated_states = aggregated_states.reset_index()
+        aggregated_states.columns = ['Cell State','Proportion']
+        aggregated_states['Proportion'] = aggregated_states['Proportion']/aggregated_states['Proportion'].sum()
+
+        state_bar = go.Figure(px.bar(aggregated_states,x='Cell State', y = 'Proportion',title=f'Cell State Proportions for {top_cell}'))
+
+        return cell_types_pie, state_bar
+
+    def put_square(self,thumb_click_point,wsi_click_point,cell_val,vis_val,roi_size,vis_type):
+        
+        vis_val = int((vis_val/100)*255)
+        self.patch_size = roi_size*30
+        self.current_vis_type = vis_type
+        self.current_cell = cell_val
+
+        if ctx.triggered_id in ['thumb-img','wsi-view',None]:
+            
+            if ctx.triggered_id == 'thumb-img':
+                click_point = [thumb_click_point['points'][0]['x'],thumb_click_point['points'][0]['y']]
+            elif ctx.triggered_id == 'wsi-view':
+                # Getting wsi-view click coordinates
+                wsi_click_coords = [wsi_click_point['points'][0]['x'],wsi_click_point['points'][0]['y']]
+                # Getting wsi-view origin points in thumbnail-view space
+                current_origin = [i-(self.roi_size/2) for i in self.current_click]
+                current_width,current_height = self.current_wsi_image.size
+                wsi_view_dims = [current_width,current_height]
+                click_point = [k+(i*(self.roi_size/j)) for i,j,k in zip(wsi_click_coords,wsi_view_dims,current_origin)]
+
+            elif ctx.triggered_id is None:
+                click_point = [int(self.roi_size/2),int(self.roi_size/2)]
+
+            new_square_image, square_poly = self.update_square_location(click_point)
+
+            self.current_click = click_point
+
+            self.current_square = new_square_image
+            self.current_square_poly = square_poly
+
+            self.current_projected_poly = self.gen_projected_poly()
+
+            self.current_ftus = self.wsi.find_intersecting_ftu(self.current_projected_poly)
+
+            self.current_wsi_image = self.wsi.get_image(list(self.current_projected_poly.bounds))
+
+            self.patch_centers = self.gen_patch_centers(self.current_wsi_image)
+            # Getting cell overlay
+            self.current_overlay = self.gen_cell_vis(cell_val,vis_val)
+            vis_overlay = self.current_wsi_image.copy()
+            vis_overlay.paste(self.current_overlay,mask=self.current_overlay)
+
+            if self.current_vis_type=='FTUs':
+                vis_overlay.paste(self.current_ftu_outlines,mask=self.current_ftu_outlines)
+
+            wsi_fig = go.Figure(px.imshow(vis_overlay))
+            square_fig = go.Figure(px.imshow(new_square_image))
+
+        if ctx.triggered_id == 'cell-drop' or ctx.triggered_id == 'vis-types':
+
+            new_overlay = self.gen_cell_vis(cell_val,vis_val)
+
+            self.current_overlay = new_overlay
+            vis_overlay = self.current_wsi_image.copy()
+            vis_overlay.paste(new_overlay,mask = new_overlay)
+
+            if self.current_vis_type=='FTUs':
+                vis_overlay.paste(self.current_ftu_outlines,mask=self.current_ftu_outlines)
+
+            wsi_fig = go.Figure(px.imshow(vis_overlay))
+            square_fig = go.Figure(px.imshow(self.current_square))
+
+        if ctx.triggered_id == 'vis-slider':
+
+            vis = np.array(self.current_overlay)[:,:,0:3]
+            zero_mask = np.where(np.sum(vis,axis=2)==0,0,vis_val)
+            vis_mask_4d = np.concatenate((vis,zero_mask[:,:,None]),axis=-1)
+            vis_mask_4d = Image.fromarray(np.uint8(vis_mask_4d)).convert('RGBA')
+
+            self.current_overlay = vis_mask_4d
+            vis_overlay = self.current_wsi_image.copy()
+            vis_overlay.paste(self.current_overlay,mask=self.current_overlay)
+
+            if self.current_vis_type=='FTUs':
+                vis_overlay.paste(self.current_ftu_outlines,mask=self.current_ftu_outlines)
+
+            wsi_fig = go.Figure(px.imshow(vis_overlay))
+            square_fig = go.Figure(px.imshow(self.current_square))
+
+        if ctx.triggered_id == 'roi-slider':
+            # Resizing ROI
+            self.roi_size = roi_size
+            new_square_image, square_poly = self.update_square_location(self.current_click)
+
+            self.current_square = new_square_image
+            self.current_square_poly = square_poly
+
+            self.current_projected_poly = self.gen_projected_poly()
+            self.current_ftus = self.wsi.find_intersecting_ftu(self.current_projected_poly)
+
+            self.current_wsi_image = self.wsi.get_image(list(self.current_projected_poly.bounds))
+
+            self.patch_centers = self.gen_patch_centers(self.current_wsi_image)
+
+            # Getting cell overlay
+            self.current_overlay = self.gen_cell_vis(cell_val,vis_val)
+            vis_overlay = self.current_wsi_image.copy()
+            vis_overlay.paste(self.current_overlay,mask=self.current_overlay)
+
+            if self.current_vis_type=='FTUs':
+                vis_overlay.paste(self.current_ftu_outlines,mask=self.current_ftu_outlines)
+
+            wsi_fig = go.Figure(px.imshow(vis_overlay))
+            square_fig = go.Figure(px.imshow(new_square_image))
+
+        wsi_fig.update_layout(
+            margin=dict(l=10,r=10,t=10,b=10),
+        )
+
+        square_fig.update_layout(
+            margin=dict(l=10,r=10,t=10,b=10)
+        )
+        
+        cell_types_pie, state_barchart = self.gen_roi_pie()
+
+        # Loading the cell-graphic and hierarchy image
+        cell_graphic = self.cell_graphics_key[self.current_cell]['graphic']
+        cell_hierarchy = self.cell_graphics_key[self.current_cell]['hierarchy']
+
+        if cell_graphic == "":
+            cell_graphic = './assets/cell_graphics/default_cell_graphic.png'
+        if cell_hierarchy == "":
+            cell_hierarchy = './assets/cell_graphics/default_cell_hierarchy.png'
+
+        return square_fig, wsi_fig, cell_types_pie, state_barchart, cell_graphic, cell_hierarchy
+
+    def update_state_bar(self,cell_click):
+        
+        if not cell_click is None:
+            self.pie_cell = cell_click['points'][0]['label']
+        else:
+            self.pie_cell = self.current_cell
+
+        # Getting pct_states
+        pct_states = self.wsi.counts_data[self.pie_cell]['pct_states']
+        # Getting spots from columns
+        intersect_states = pct_states[pct_states.columns.intersection(self.current_barcodes)]
+        aggregated_states = intersect_states.sum(axis=1).to_frame()
+        aggregated_states = aggregated_states.reset_index()
+        aggregated_states.columns = ['Cell State','Proportion']
+        aggregated_states['Proportion'] = aggregated_states['Proportion']/aggregated_states['Proportion'].sum()
+
+        state_bar = go.Figure(px.bar(aggregated_states,x='Cell State', y = 'Proportion',title=f'Cell State Proportions for {self.pie_cell}'))
+
+        return state_bar
+    
+    def get_hover(self,wsi_hover):
+
+        hover_text = ''
+        if not wsi_hover is None:
+            hover_point = [wsi_hover['points'][0]['x'],wsi_hover['points'][0]['y']]
+        else:
+            hover_point = [0,0]
+
+        # Getting hover data relative to wsi coordinates
+        square_bounds = list(self.current_projected_poly.bounds)
+        if self.current_vis_type in ['Spots','FTUs']:
+            wsi_point = Point(hover_point[0]+square_bounds[0],hover_point[1]+square_bounds[1])
+
+            if self.current_vis_type == 'Spots':
+                spot_idx = np.argwhere([i.intersects(wsi_point) for i in self.current_spots])[0]
+                barcode = self.current_barcodes[spot_idx[0]]
+                counts = self.current_counts.loc[barcode][self.current_cell]
+                hover_text += f'{self.current_cell}: {str(round(counts,3))}'
+            
+            if self.current_vis_type == 'FTUs':
+                ftu_idx = np.argwhere([i.intersects(wsi_point) for i in self.current_ftus['polys']])[0]
+                cell_val = self.current_ftus['main_counts'][ftu_idx[0]][self.current_cell]
+                hover_text += f'{self.current_cell}: {str(round(cell_val,3))}'
+        else:
+            # For heatmap visualization
+            hover_text += f'{self.current_cell}: {str(round(self.current_cell_distribution[hover_point[1],hover_point[0]]))}'
+
+        return hover_text
+        
+
+
+
+if __name__ == '__main__':
+
+    slide_name = 'XY01_IU-21-015F.svs'
+    run_type = 'web'
+    
+    if run_type == 'local':
+        # For local testing
+        base_dir = '/mnt/c/Users/Sam/Desktop/HIVE/'
+        slide_path = base_dir+'FFPE/'+slide_name
+        spot_path = base_dir+'FFPE/Spot_Coordinates_large/'+slide_name.replace('.svs','_Large.xml')
+        counts_path = base_dir+'counts_data/FFPE/CellTypeFractions_SpotLevel/V10S15-103_'+slide_name.replace('.svs','_cellfract.csv')
+        counts_def_path = base_dir+'counts_data/Cell_SubTypes_Grouped.csv'
+        ftu_path = base_dir+'SpotNet_NonEssential_Files/'+slide_name.replace('.svs','.geojson')
+
+
+
+    elif run_type == 'web':
+        # For test deployment
+        base_dir = os.getcwd()
+        slide_path = base_dir+'/assets/slide_info/'+slide_name
+        spot_path = slide_path.replace('.tif','_Large.xml')
+        counts_path = slide_path.replace('.tif','_cellfract.csv')
+        counts_def_path = slide_path.replace(slide_name,'Cell_SubTypes_Grouped.csv')
+        ftu_path = slide_path.replace('.tif','.geojson')
+
+
+    
+    # Reading in FTU annotations for this slide
+    """
+    ftu_path = '/mnt/c/Users/Sam/Desktop/HIVE/FFPE/MultiComp_XMLs/'+slide_name.replace('.svs','.xml')
+    ann_ids = {
+        'Glomeruli':3,
+        'Tubules':5,
+        'Arterioles':6
+    }
+    """
+
+    ann_ids = None
+
+    # Reading dictionary containing paths for specific cell types
+    cell_graphics_key = './graphic_reference.json'
+    
+    wsi = Slide(slide_path,spot_path,counts_path,ftu_path,ann_ids,counts_def_path)
+
+    external_stylesheets = [dbc.themes.LUX]
+
+    main_layout = gen_layout(wsi.cell_types,wsi.thumb)
+
+    main_app = DashProxy(__name__,external_stylesheets=external_stylesheets,transforms = [MultiplexerTransform()])
+    vis_app = SlideHeatVis(main_app,main_layout,wsi,cell_graphics_key)
+
+
