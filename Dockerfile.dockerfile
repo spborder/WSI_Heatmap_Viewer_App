@@ -1,7 +1,7 @@
 # Dockerfile for WSI_Heatmap_Viewer Dash app
 # Not sure if it will work :/
 
-FROM python:3.6-slim
+FROM python:3.6
 
 LABEL maintainer="Sam Border CMI Lab <samuel.border@medicine.ufl.edu>"
 
@@ -12,8 +12,9 @@ RUN apt-get update && \
 RUN git clone https://github.com/spborder/WSI_Heatmap_Viewer_App.git
 
 COPY . ./
-
+RUN python3 -m pip install --upgrade pip
 RUN python3 -m pip install -r ./requirements.txt --no-cache-dir
+RUN python3 -m pip install tiffslide --no-cache-dir
 RUN python3 -m pip freeze
 
 
