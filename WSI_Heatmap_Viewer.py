@@ -992,7 +992,7 @@ class SlideHeatVis:
         
 
 #if __name__ == '__main__':
-def app():
+def app(*args):
 
     slide_name = 'XY01_IU-21-015F.svs'
     run_type = 'web'
@@ -1006,8 +1006,6 @@ def app():
         counts_def_path = base_dir+'counts_data/Cell_SubTypes_Grouped.csv'
         ftu_path = base_dir+'SpotNet_NonEssential_Files/'+slide_name.replace('.svs','.geojson')
 
-
-
     elif run_type == 'web':
         # For test deployment
         base_dir = os.getcwd()
@@ -1016,8 +1014,6 @@ def app():
         counts_path = base_dir+'/slide_info/V10S15-103_'+slide_name.replace('.svs','_cellfract.csv')
         counts_def_path = slide_path.replace(slide_name,'Cell_SubTypes_Grouped.csv')
         ftu_path = slide_path.replace('.svs','.geojson')
-
-
     
     # Reading in FTU annotations for this slide
     """

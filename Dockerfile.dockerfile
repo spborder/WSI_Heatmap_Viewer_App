@@ -16,7 +16,6 @@ RUN git clone https://github.com/spborder/WSI_Heatmap_Viewer_App.git
 COPY . ./
 RUN python3 -m pip install --upgrade pip
 RUN python3 -m pip install -r ./requirements.txt --no-cache-dir
-RUN python3 -m pip install tiffslide --no-cache-dir
 RUN python3 -m pip freeze
 
 
