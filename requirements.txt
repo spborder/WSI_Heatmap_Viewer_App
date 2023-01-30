@@ -12,7 +12,9 @@ dash-bootstrap-components==1.2.1
 dash-core-components==2.0.0
 dash-extensions==0.0.71
 dash-html-components==2.0.0
+dash-leaflet==0.1.23
 dash-table==5.0.0
+dataclasses==0.8
 decorator==4.4.2
 EditorConfig==0.12.3
 Fiona==1.8.22
@@ -40,6 +42,7 @@ munch==2.5.0
 networkx==2.5.1
 numpy==1.19.5
 opencv-python==4.6.0.66
+openslide-python==1.1.2
 pandas==1.1.5
 param==1.12.3
 Pillow==8.4.0
