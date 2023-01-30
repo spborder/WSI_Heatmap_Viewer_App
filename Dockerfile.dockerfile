@@ -7,7 +7,9 @@ LABEL maintainer="Sam Border CMI Lab <samuel.border@medicine.ufl.edu>"
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    git
+    git \
+    openslide-tools \
+    python3-openslide
 
 RUN git clone https://github.com/spborder/WSI_Heatmap_Viewer_App.git
 
