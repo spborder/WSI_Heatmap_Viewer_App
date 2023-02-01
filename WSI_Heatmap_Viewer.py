@@ -1008,7 +1008,7 @@ def app(*args):
 
     elif run_type == 'web':
         # For test deployment
-        base_dir = os.getcwd()
+        base_dir = os.getcwd()+'/mysite/'
         slide_path = base_dir+'/slide_info/'+slide_name
         spot_path = slide_path.replace('.svs','_Large.xml')
         counts_path = base_dir+'/slide_info/V10S15-103_'+slide_name.replace('.svs','_cellfract.csv')
@@ -1028,7 +1028,7 @@ def app(*args):
     ann_ids = None
 
     # Reading dictionary containing paths for specific cell types
-    cell_graphics_key = './graphic_reference.json'
+    cell_graphics_key = 'graphic_reference.json'
     
     wsi = Slide(slide_path,spot_path,counts_path,ftu_path,ann_ids,counts_def_path)
 
