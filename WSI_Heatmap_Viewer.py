@@ -35,7 +35,7 @@ from matplotlib import cm
 
 from dash import dcc, ctx, Dash
 import dash_bootstrap_components as dbc
-from dash_extensions.enrich import DashProxy, html, Input, Output, MultiplexerTransform
+from dash_extensions.enrich import DashProxy, html, Input, Output, MultiplexerTransform, State
 
 def gen_layout(cell_types,thumb):
 
@@ -43,7 +43,7 @@ def gen_layout(cell_types,thumb):
     header = dbc.Navbar(
         dbc.Container([
             dbc.Row([
-                dbc.Col(html.Img(id='logo',src=('./assets/Lab_Logo_white.png'),height='100px'),md='auto'),
+                dbc.Col(html.Img(id='logo',src=('./assets/Lab_Logo_white.png'),height='75px'),md='auto'),
                 dbc.Col([
                     html.Div([
                         html.H3('Whole Slide Image Cell Distribution'),
@@ -86,9 +86,40 @@ def gen_layout(cell_types,thumb):
             ], fluid=True),
         dark=True,
         color="dark",
-        sticky="top"
+        sticky="top",
+        style={'margin-bottom':'20px'}
     )
     
+    
+    # Description and instructions card
+    description = dbc.Card(
+        children = [
+            #dbc.CardHeader("Description and Instructions"),
+            dbc.CardBody([
+                dbc.Button("Hide Instructions",id='collapse-descrip',className='mb-3',color='primary',n_clicks=0),
+                dbc.Collapse(
+                    dbc.Row(
+                        dbc.Col(
+                            html.Div(
+                                id = 'descrip',
+                                children = [
+                                    html.P('Click within the thumbnail image to drop a square ROI over that point to view in full resolution.'),
+                                    html.Hr(),
+                                    html.P('Click within the Whole Slide Image Viewer for fine adjustments in current ROI'),
+                                    html.Hr(),
+                                    html.P('Select a specific cell type to adjust overlaid heatmap visualization'),
+                                    html.Hr(),
+                                    html.P('Heatmaps can be generated on a whole ROI basis (using overlapping patches), spot basis (showing raw spot cell type proportions), or on a per-Functional Tissue Unit (FTU) basis showing aggregated cell types for overlapping spots')
+                                ],style={'fontSize':10}
+                            )
+                        )
+                    ),id='collapse-content',is_open=False
+                )
+            ])
+        ],style={'margin-bottom':'20px'}
+    )
+    
+
     # View of WSI
     wsi_view = [
         dbc.Card(
@@ -114,79 +145,89 @@ def gen_layout(cell_types,thumb):
                             )
                         ]
                     ),
-                    html.Hr(),
-                    dcc.RadioItems(
-                        id= 'vis-types',
-                        options=[
-                            {'label':html.Div('Heatmap',style={'margin-right':'20px','padding-left':'15px'}),'value':'Heatmap'},
-                            {'label':html.Div('Spots',style={'margin-right':'20px','padding-left':'15px'}),'value':'Spots'},
-                            {'label':html.Div('FTUs',style={'margin-right':'20px','padding-left':'15px'}),'value':'FTUs'}
-                        ],
-                        value = 'Heatmap',
-                        inline = True
+                    dbc.CardFooter(
+                        dcc.RadioItems(
+                            id= 'vis-types',
+                            options=[
+                                {'label':html.Div('Heatmap',style={'margin-right':'20px','padding-left':'15px'}),'value':'Heatmap'},
+                                {'label':html.Div('Spots',style={'margin-right':'20px','padding-left':'15px'}),'value':'Spots'},
+                                {'label':html.Div('FTUs',style={'margin-right':'20px','padding-left':'15px'}),'value':'FTUs'}
+                            ],
+                            value = 'Heatmap',
+                            inline = True
+                        )
                     )
                 ])
-            ]
+            ],style={'margin-bottom':'20px'}
         )
     ]
 
     # Contents of tabs
-    thumbnail_select = dbc.Card([
-        dbc.CardBody(
-            [dbc.Label("Thumbnail View", html_for="thumb-img"),
-            dcc.Graph(
-                id="thumb-img",
-                figure=go.Figure(px.imshow(thumb))
-            )
-            ]
-        ),
-        dbc.CardFooter([
-            dbc.Label("ROI Size", html_for="roi-slider"),
-            dcc.Slider(
-                id="roi-slider",
-                min=5,
-                max=50,
-                step=5,
-                value=10
-            )
-        ])
-    ])
+    thumbnail_select = dbc.Card(
+        children = [
+            dbc.CardHeader("Thumbnail View"),
+            dbc.CardBody([
+                dcc.Graph(
+                    id="thumb-img",
+                    figure=go.Figure(px.imshow(thumb))
+                )]
+            ),
+            html.Div(),
+            dbc.CardFooter([
+                dbc.Label("ROI Size", html_for="roi-slider"),
+                dcc.Slider(
+                    id="roi-slider",
+                    min=5,
+                    max=50,
+                    step=5,
+                    value=10
+                )
+            ])
+    ],style={'margin-bottom':'20px'})
 
     # Cell type proportions and cell state distributions
     roi_pie = dbc.Card([
         dbc.CardBody([
-            dbc.Label("ROI Cell Proportions", html_for="roi-pie"),
-            dcc.Graph(
-                id="roi-pie",
-                figure=go.Figure()
-            ),
-            html.Hr(),
-            dbc.Label("Selected Cell States",html_for="state-bar"),
-            dcc.Graph(
-                id="state-bar",
-                figure=go.Figure()
-            )
+            dbc.Row([
+                dbc.Col([
+                    dbc.Label("ROI Cell Proportions", html_for="roi-pie"),
+                    dcc.Graph(
+                        id="roi-pie",
+                        figure=go.Figure()
+                    ),
+                ],md=6),
+                dbc.Col([
+                    dbc.Label("Selected Cell States",html_for="state-bar"),
+                    dcc.Graph(
+                        id="state-bar",
+                        figure=go.Figure()
+                    )
+                ],md=6)
+            ])
         ])
     ])
 
     # Cell card graphic and hierarchy
     cell_card = dbc.Card([
         dbc.CardBody([
-            dbc.Label("Cell Graphic", html_for="cell-graphic"),
-            html.Img(
-                id = 'cell-graphic',
-                src = './assets/cell_graphics/default_cell_graphic.png',
-                height = '250px',
-                width = '500px'
-            ),
-            html.Hr(),
-            dbc.Label("Cell Hierarchy",html_for="cell-hierarchy"),
-            html.Img(
-                id = 'cell-hierarchy',
-                src = './assets/cell_graphics/default_cell_hierarchy.png',
-                height='350px',
-                width = '500px'
-            )
+            dbc.Row([
+                dbc.Col([
+                    dbc.Label("Cell Graphic", html_for="cell-graphic"),
+                    html.Img(
+                        id = 'cell-graphic',
+                        src = './assets/cell_graphics/default_cell_graphic.png',
+                        height = '250px',
+                        width = '500px'
+                    )],md=6),
+                dbc.Col([
+                    dbc.Label("Cell Hierarchy",html_for="cell-hierarchy"),
+                    html.Img(
+                        id = 'cell-hierarchy',
+                        src = './assets/cell_graphics/default_cell_hierarchy.png',
+                        height='350px',
+                        width = '500px'
+                    )],md=6)
+            ])
         ]),
         dbc.CardFooter(
             dbc.Row([
@@ -231,7 +272,7 @@ def gen_layout(cell_types,thumb):
                         ]),
                         dbc.Row([
                             dbc.Tabs([
-                                dbc.Tab(thumbnail_select, label = "Thumbnail ROI"),
+                                #dbc.Tab(thumbnail_select, label = "Thumbnail ROI"),
                                 dbc.Tab(roi_pie, label = "Cell Composition"),
                                 dbc.Tab(cell_card,label = "Cell Card")
                             ])
@@ -244,10 +285,21 @@ def gen_layout(cell_types,thumb):
 
     main_layout = html.Div([
         header,
+        html.B(),
         dbc.Container([
             dbc.Row(
+                id = 'descrip-and-instruct',
+                children = description
+            ),
+            html.B(),
+            dbc.Row(
                 id="app-content",
-                children=[dbc.Col(wsi_view,md=6),dbc.Col(tools,md=6)]
+                children=[dbc.Col(wsi_view,md=6),dbc.Col(thumbnail_select,md=6)]
+            ),
+            html.B(),
+            dbc.Row(
+                id='tab-info',
+                children = [dbc.Col(tools,md=12)]
             )
         ],fluid=True)
     ])
@@ -332,32 +384,6 @@ class Slide:
 
             # Combining states with the same name
             state_pct_df = state_pct_df.groupby(level=0).sum()
-            """
-            else:
-                # Combining cell states and re-naming
-                states_present = [state_list[i] for i in range(len(state_list)) if sub_list[i] in list(state_pct_df.index)]
-                state_pct_df.index = states_present
-
-                # Defining new index from given states to include
-                new_idx = list(self.use_states.keys())
-                for new in new_idx:
-                    # Replacing the index values in the data frame if that index value is in the values list for a given new index key
-                    state_pct_df.index = [new if i in self.use_states[new] else i for i in list(state_pct_df.index)]
-
-                # Drop remaining states that aren't in the final index
-                if any([i not in new_idx for i in list(state_pct_df.index)]):
-                    state_pct_df = state_pct_df.drop([i for i in list(state_pct_df.index) if i not in new_idx])
-
-                # Combining states with the same name
-                state_pct_df = state_pct_df.groupby(level=0).sum()
-
-                # Adding row(s) of zeros to reach final index
-                if len(list(state_pct_df.index))<len(new_idx):
-                    add_row_names = [i for i in new_idx if i not in state_pct_df.index]
-                    for add in add_row_names:
-                        added_df = pd.DataFrame([[0]*state_pct_df.shape[1]], columns = state_pct_df.columns, index=[add])
-                        state_pct_df = pd.concat([state_pct_df,added_df],axis=0)
-            """
 
             # Re-normalizing (if certain cell states are removed) (replacing inf/nan with zero (for structures that have a sum of zero across included cell states))
             state_pct_df = (state_pct_df/state_pct_df.sum(axis=0)).fillna(0)
@@ -520,6 +546,7 @@ class SlideHeatVis:
         self.app = app
         self.app.title = "WSI Heatmap Viewer"
         self.app.layout = layout
+        self.app._favicon = './assets/favicon.ico'
 
         self.wsi = wsi
         # size here is in the form [width,height]
@@ -527,6 +554,11 @@ class SlideHeatVis:
         print(f'wsi_size: {self.wsi_size}')
 
         self.cell_graphics_key = json.load(open(cell_graphics_key))
+        # Inverting the graphics key to get {'full_name':'abbreviation'}
+        self.cell_names_key = {}
+        for ct in self.cell_graphics_key:
+            self.cell_names_key[self.cell_graphics_key[ct]['full']] = ct
+        
 
         self.original_thumb = self.wsi.thumb.copy()
         self.roi_size = 2
@@ -570,9 +602,27 @@ class SlideHeatVis:
             Output('current-hover','children'),
             Input('wsi-view','hoverData')
         )(self.get_hover)
-        
-        self.app.run_server(debug=True,use_reloader=True,port=8000)
 
+        self.app.callback(
+            [Output('collapse-content','is_open'),
+            Output('collapse-descrip','children')],
+            [Input('collapse-descrip','n_clicks'),
+            Input('collapse-descrip','children')],
+            [State('collapse-content','is_open')]
+        )(self.view_instructions)
+        
+        # Comment out this line when running on the web
+        #self.app.run_server(debug=True,use_reloader=True,port=8000)
+
+    def view_instructions(self,n,text,is_open):
+        if text == 'View Instructions':
+            new_text = 'Hide Instructions'
+        else:
+            new_text = 'View Instructions'
+        if n:
+            return [not is_open,new_text]
+        return [is_open,new_text]
+    
     def gen_square(self,center_coords):
 
         # Given a center coordinate (x,y), generate a square of set size for pasting on thumbnail image
@@ -675,6 +725,7 @@ class SlideHeatVis:
                 outline_mask_3D[cc_o,rr_o,:] = self.ftu_color[ftu_names[poly_list.index(p)].split('_')[0]]
                 outline_mask_3D[cc,rr,:] = [0,0,0]
 
+            intermed_mask[intermed_mask==0] = np.nan
             cell_vis_mask = np.nanmean(np.stack((cell_vis_mask,intermed_mask),axis=-1),axis=-1)
 
         if shape_type == 'ftus':
@@ -811,7 +862,7 @@ class SlideHeatVis:
         aggregated_states.columns = ['Cell State','Proportion']
         aggregated_states['Proportion'] = aggregated_states['Proportion']/aggregated_states['Proportion'].sum()
 
-        state_bar = go.Figure(px.bar(aggregated_states,x='Cell State', y = 'Proportion',title=f'Cell State Proportions for {top_cell}'))
+        state_bar = go.Figure(px.bar(aggregated_states,x='Cell State', y = 'Proportion',title=f'Cell State Proportions for {self.cell_graphics_key[top_cell]["full"]}'))
 
         return cell_types_pie, state_bar
 
@@ -820,7 +871,7 @@ class SlideHeatVis:
         vis_val = int((vis_val/100)*255)
         self.patch_size = roi_size*30
         self.current_vis_type = vis_type
-        self.current_cell = cell_val
+        self.current_cell = self.cell_names_key[cell_val]
 
         if ctx.triggered_id in ['thumb-img','wsi-view',None]:
             
@@ -853,7 +904,7 @@ class SlideHeatVis:
 
             self.patch_centers = self.gen_patch_centers(self.current_wsi_image)
             # Getting cell overlay
-            self.current_overlay = self.gen_cell_vis(cell_val,vis_val)
+            self.current_overlay = self.gen_cell_vis(self.current_cell,vis_val)
             vis_overlay = self.current_wsi_image.copy()
             vis_overlay.paste(self.current_overlay,mask=self.current_overlay)
 
@@ -865,7 +916,7 @@ class SlideHeatVis:
 
         if ctx.triggered_id == 'cell-drop' or ctx.triggered_id == 'vis-types':
 
-            new_overlay = self.gen_cell_vis(cell_val,vis_val)
+            new_overlay = self.gen_cell_vis(self.current_cell,vis_val)
 
             self.current_overlay = new_overlay
             vis_overlay = self.current_wsi_image.copy()
@@ -910,7 +961,7 @@ class SlideHeatVis:
             self.patch_centers = self.gen_patch_centers(self.current_wsi_image)
 
             # Getting cell overlay
-            self.current_overlay = self.gen_cell_vis(cell_val,vis_val)
+            self.current_overlay = self.gen_cell_vis(self.current_cell,vis_val)
             vis_overlay = self.current_wsi_image.copy()
             vis_overlay.paste(self.current_overlay,mask=self.current_overlay)
 
@@ -957,7 +1008,7 @@ class SlideHeatVis:
         aggregated_states.columns = ['Cell State','Proportion']
         aggregated_states['Proportion'] = aggregated_states['Proportion']/aggregated_states['Proportion'].sum()
 
-        state_bar = go.Figure(px.bar(aggregated_states,x='Cell State', y = 'Proportion',title=f'Cell State Proportions for {self.pie_cell}'))
+        state_bar = go.Figure(px.bar(aggregated_states,x='Cell State', y = 'Proportion',title=f'Cell State Proportions for {self.cell_graphics_key[self.pie_cell]["full"]}'))
 
         return state_bar
     
@@ -978,15 +1029,15 @@ class SlideHeatVis:
                 spot_idx = np.argwhere([i.intersects(wsi_point) for i in self.current_spots])[0]
                 barcode = self.current_barcodes[spot_idx[0]]
                 counts = self.current_counts.loc[barcode][self.current_cell]
-                hover_text += f'{self.current_cell}: {str(round(counts,3))}'
+                hover_text += f'{self.cell_graphics_key[self.current_cell]["full"]}: {str(round(counts,3))}'
             
             if self.current_vis_type == 'FTUs':
                 ftu_idx = np.argwhere([i.intersects(wsi_point) for i in self.current_ftus['polys']])[0]
                 cell_val = self.current_ftus['main_counts'][ftu_idx[0]][self.current_cell]
-                hover_text += f'{self.current_cell}: {str(round(cell_val,3))}'
+                hover_text += f'{self.cell_graphics_key[self.current_cell]["full"]}: {str(round(cell_val,3))}'
         else:
             # For heatmap visualization
-            hover_text += f'{self.current_cell}: {str(round(self.current_cell_distribution[hover_point[1],hover_point[0]]))}'
+            hover_text += f'{self.cell_graphics_key[self.current_cell]["full"]}: {str(round(self.current_cell_distribution[hover_point[1],hover_point[0]]))}'
 
         return hover_text
         
@@ -1005,6 +1056,7 @@ def app(*args):
         counts_path = base_dir+'counts_data/FFPE/CellTypeFractions_SpotLevel/V10S15-103_'+slide_name.replace('.svs','_cellfract.csv')
         counts_def_path = base_dir+'counts_data/Cell_SubTypes_Grouped.csv'
         ftu_path = base_dir+'SpotNet_NonEssential_Files/'+slide_name.replace('.svs','.geojson')
+        cell_graphics_path = 'graphic_reference.json'
 
     elif run_type == 'web':
         # For test deployment
@@ -1014,29 +1066,31 @@ def app(*args):
         counts_path = base_dir+'/slide_info/V10S15-103_'+slide_name.replace('.svs','_cellfract.csv')
         counts_def_path = slide_path.replace(slide_name,'Cell_SubTypes_Grouped.csv')
         ftu_path = slide_path.replace('.svs','.geojson')
-    
-    # Reading in FTU annotations for this slide
-    """
-    ftu_path = '/mnt/c/Users/Sam/Desktop/HIVE/FFPE/MultiComp_XMLs/'+slide_name.replace('.svs','.xml')
-    ann_ids = {
-        'Glomeruli':3,
-        'Tubules':5,
-        'Arterioles':6
-    }
-    """
+        cell_graphics_path = base_dir+'graphic_reference.json'
 
     ann_ids = None
 
     # Reading dictionary containing paths for specific cell types
-    cell_graphics_key = 'graphic_reference.json'
-    
+    cell_graphics_key = cell_graphics_path
+    cell_graphics_json = json.load(open(cell_graphics_key))
+    cell_names = []
+    for ct in cell_graphics_json:
+        cell_names.append(cell_graphics_json[ct]['full'])
+
     wsi = Slide(slide_path,spot_path,counts_path,ftu_path,ann_ids,counts_def_path)
 
     external_stylesheets = [dbc.themes.LUX]
 
-    main_layout = gen_layout(wsi.cell_types,wsi.thumb)
+    main_layout = gen_layout(cell_names,wsi.thumb)
 
     main_app = DashProxy(__name__,external_stylesheets=external_stylesheets,transforms = [MultiplexerTransform()])
     vis_app = SlideHeatVis(main_app,main_layout,wsi,cell_graphics_key)
 
+    if run_type=='web':
+        return vis_app.app
 
+# Comment this portion out for web running
+"""
+if __name__=='__main__':
+    app()
+"""
