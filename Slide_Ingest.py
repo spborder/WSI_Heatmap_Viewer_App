@@ -24,6 +24,9 @@ slide_name = 'XY01_IU-21-015F.svs'
 base_dir = '/mnt/c/Users/Sam/Desktop/HIVE/'
 slide_path = base_dir+'FFPE/'+slide_name
 
+# Adding spot path
+spot_path = '/mnt/c/Users/Sam/Desktop/HIVE/'
+
 save_path = base_dir+'FFPE/Slide_Tiles/'+slide_name.replace('.svs','')+'/'
 
 tile_size = (1500,1500)
