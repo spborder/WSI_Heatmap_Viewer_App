@@ -40,7 +40,7 @@ from dash_extensions.enrich import DashProxy, html, Input, Output, MultiplexerTr
 from timeit import default_timer as timer
 
 
-def gen_layout(cell_types,thumb):
+def gen_layout(cell_types,slides_available,thumb):
 
     # Header
     header = dbc.Navbar(
@@ -122,6 +122,36 @@ def gen_layout(cell_types,thumb):
         ],style={'margin-bottom':'20px'}
     )
     
+    # Slide selection
+    
+    slide_select = dbc.Card(
+        id = 'slide-select-card',
+        children = [
+            dbc.CardHeader("Select case from dropdown menu"),
+            dbc.CardBody([
+                dbc.Row([
+                    dbc.Col(
+                        html.Div(
+                            id = "slide_select-label",
+                            children = [
+                                html.P("Available cases: ")
+                            ]
+                        ),md=4
+                    ),
+                    dbc.Col(
+                        html.Div(
+                            dcc.Dropdown(
+                                slides_available,
+                                slides_available[0],
+                                id = 'slide-select'
+                            )
+                        ), md=8
+                    )
+                ])
+            ])
+        ],style={'margin-bottom':'20px'}
+    )
+    
 
     # View of WSI
     wsi_view = [
@@ -177,14 +207,28 @@ def gen_layout(cell_types,thumb):
             ),
             html.Div(),
             dbc.CardFooter([
-                dbc.Label("ROI Size", html_for="roi-slider"),
-                dcc.Slider(
-                    id="roi-slider",
-                    min=5,
-                    max=50,
-                    step=5,
-                    value=10
-                )
+                dbc.Row([
+                    dbc.Col([
+                        dbc.Label("ROI Size", html_for="roi-slider"),
+                        dcc.Slider(
+                            id="roi-slider",
+                            min=5,
+                            max=50,
+                            step=5,
+                            value=10
+                        )
+                    ],md=6),
+                    dbc.Col([
+                        dbc.Label("Thumbnail Transparency",html_for='thumb-slider'),
+                        dcc.Slider(
+                            id='thumb-slider',
+                            min=0,
+                            max=100,
+                            step=10,
+                            value=50
+                        )
+                    ],md=6)
+                ])
             ])
     ],style={'margin-bottom':'20px'})
 
@@ -306,6 +350,11 @@ def gen_layout(cell_types,thumb):
             dbc.Row(
                 id = 'descrip-and-instruct',
                 children = description
+            ),
+            html.B(),
+            dbc.Row(
+                id = 'slide-select-row',
+                children = slide_select
             ),
             html.B(),
             dbc.Row(
@@ -1278,6 +1327,8 @@ def app(*args):
 
     slide_name = 'XY01_IU-21-015F.svs'
     run_type = 'local'
+
+    slides_available = [slide_name]
     
     if run_type == 'local':
         # For local testing
@@ -1286,7 +1337,7 @@ def app(*args):
         spot_path = base_dir+'FFPE/Spot_Coordinates_large/'+slide_name.replace('.svs','_Large.xml')
         counts_path = base_dir+'counts_data/FFPE/CellTypeFractions_SpotLevel/V10S15-103_'+slide_name.replace('.svs','_cellfract.csv')
         counts_def_path = base_dir+'counts_data/Cell_SubTypes_Grouped.csv'
-        ftu_path = base_dir+'SpotNet_NonEssential_Files/'+slide_name.replace('.svs','.geojson')
+        ftu_path = base_dir+'SpotNet_NonEssential_Files/CellAnnotations_GeoJSON/'+slide_name.replace('.svs','.geojson')
         cell_graphics_path = 'graphic_reference.json'
 
     elif run_type == 'web':
@@ -1312,7 +1363,7 @@ def app(*args):
 
     external_stylesheets = [dbc.themes.LUX]
 
-    main_layout = gen_layout(cell_names,wsi.thumb)
+    main_layout = gen_layout(cell_names,slides_available,wsi.thumb)
 
     main_app = DashProxy(__name__,external_stylesheets=external_stylesheets,transforms = [MultiplexerTransform()])
     vis_app = SlideHeatVis(main_app,main_layout,wsi,cell_graphics_key)
