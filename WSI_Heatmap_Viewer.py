@@ -326,18 +326,7 @@ def gen_layout(cell_types,slides_available,thumb):
                                     step=10,
                                     value=50
                                 )
-                            ],md=8),
-                            dbc.Col([
-                                dbc.Label(
-                                    "Thumbnail Heatmap",
-                                    html_for='thumb-heat'
-                                ),
-                                dcc.Checklist(
-                                    id = 'thumb-heat',
-                                    options = ["View Thumbnail Heatmap"],
-                                    value = ["View Thumbnail Heatmap"]
-                                )
-                            ],md=4)
+                            ])
                         ]),
                         dbc.Row([
                             dbc.Tabs([
@@ -811,7 +800,6 @@ class SlideHeatVis:
         for ct in self.cell_graphics_key:
             self.cell_names_key[self.cell_graphics_key[ct]['full']] = ct
 
-
         # ASCT+B table for cell hierarchy generation
         self.table_df = asct_b_table    
 
@@ -854,7 +842,7 @@ class SlideHeatVis:
             [Input('thumb-img','clickData'), Input('wsi-view','clickData'),
             Input('cell-drop','value'),Input('vis-slider','value'),
             Input('roi-slider','value'),Input('vis-types','value'),
-            Input('thumb-heat','value'),Input('slide-select','value')]
+            Input('thumb-slider','value'),Input('slide-select','value')]
         )(self.put_square)
 
         self.app.callback(
@@ -923,18 +911,17 @@ class SlideHeatVis:
 
         return square_mask_3d, square_poly
  
-    def update_square_location(self, click_coords,thumb_view,cell_val,vis_val):
+    def update_square_location(self, click_coords,thumb_val,cell_val):
         
+        thumb_val = 255*(thumb_val/100)
+
         new_square, square_center = self.gen_square(click_coords)
 
         zero_mask = np.where(np.sum(new_square.copy(),axis=2)==0,0,255)
         square_mask_4d = np.concatenate((new_square,zero_mask[:,:,None]),axis=-1)
         rgba_mask = Image.fromarray(np.uint8(square_mask_4d),'RGBA')
 
-        if thumb_view:
-            self.current_thumb = self.wsi.thumbnail_overlay(self.cell_names_key[cell_val],vis_val)
-        else:
-            self.current_thumb = self.original_thumb.copy()
+        self.current_thumb = self.wsi.thumbnail_overlay(self.cell_names_key[cell_val],thumb_val)
 
         annotated_thumb = self.current_thumb.copy()
         annotated_thumb.paste(rgba_mask,mask=rgba_mask)
@@ -1146,7 +1133,7 @@ class SlideHeatVis:
 
         return cell_types_pie, state_bar
 
-    def put_square(self,thumb_click_point,wsi_click_point,cell_val,vis_val,roi_size,vis_type,thumb_view,slide_val):
+    def put_square(self,thumb_click_point,wsi_click_point,cell_val,vis_val,roi_size,vis_type,thumb_val,slide_val):
         
         vis_val = int((vis_val/100)*255)
         self.patch_size = roi_size*30
@@ -1172,7 +1159,7 @@ class SlideHeatVis:
             elif ctx.triggered_id is None or ctx.triggered_id=='slide-select':
                 click_point = [int(self.roi_size/2),int(self.roi_size/2)]
 
-            new_square_image, square_poly = self.update_square_location(click_point,thumb_view,cell_val,vis_val)
+            new_square_image, square_poly = self.update_square_location(click_point,thumb_val,cell_val)
 
             self.current_click = click_point
 
@@ -1217,9 +1204,7 @@ class SlideHeatVis:
 
             print(f'time to generate cell visualization with {len(self.current_ftus["polys"])} FTUs and {len(self.current_spots)} spots with ROI size: {self.current_projected_poly.area}: {end-start} (seconds)')
             
-            print(thumb_view)
-            if thumb_view == ['View Thumbnail Heatmap']:
-                self.current_square, square_poly = self.update_square_location(self.current_click,thumb_view,cell_val,vis_val)
+            self.current_square, square_poly = self.update_square_location(self.current_click,thumb_val,cell_val)
 
             self.current_overlay = new_overlay
             vis_overlay = self.current_wsi_image.copy()
@@ -1244,8 +1229,7 @@ class SlideHeatVis:
             vis_overlay = self.current_wsi_image.copy()
             vis_overlay.paste(self.current_overlay,mask=self.current_overlay)
 
-            if thumb_view == 'View Thumbnail Heatmap':
-                self.current_square, square_poly = self.update_square_location(self.current_click,thumb_view,cell_val,vis_val)
+            self.current_square, square_poly = self.update_square_location(self.current_click,thumb_val,cell_val)
 
             if self.current_vis_type=='FTUs':
                 vis_overlay.paste(self.current_ftu_outlines,mask=self.current_ftu_outlines)
@@ -1258,7 +1242,7 @@ class SlideHeatVis:
         if ctx.triggered_id == 'roi-slider':
             # Resizing ROI
             self.roi_size = roi_size
-            new_square_image, square_poly = self.update_square_location(self.current_click,thumb_view,cell_val,vis_val)
+            new_square_image, square_poly = self.update_square_location(self.current_click,thumb_val,cell_val)
 
             self.current_square = new_square_image
             self.current_square_poly = square_poly
@@ -1282,15 +1266,9 @@ class SlideHeatVis:
             wsi_fig = go.Figure(px.imshow(self.current_wsi_view))
             square_fig = go.Figure(px.imshow(self.current_square))
 
-        if ctx.triggered_id == 'thumb-heat':
+        if ctx.triggered_id == 'thumb-slider':
             
-            if thumb_view=='View Thumbnail Heatmap':
-
-                self.current_square, square_poly = self.update_square_location(self.current_click,thumb_view,cell_val,vis_val)
-
-            else:
-
-                self.current_square, square_poly = self.update_square_location(self.current_click,thumb_view,cell_val,vis_val)
+            self.current_square, square_poly = self.update_square_location(self.current_click,thumb_val,cell_val)
 
             wsi_fig = go.Figure(px.imshow(self.current_wsi_view))
             square_fig = go.Figure(px.imshow(self.current_square))
