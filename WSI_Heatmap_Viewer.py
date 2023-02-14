@@ -403,7 +403,7 @@ class Slide:
 
         self.thumbnail_path = f'./assets/thumbnail_masks/{self.slide_name}/'
         if not os.path.exists(self.thumbnail_path):
-            self.thumbnail_path = f'/home/samborder/mysite/assets/thumbnail_masks/{self.slide_name}'
+            self.thumbnail_path = f'/home/samborder/mysite/assets/thumbnail_masks/{self.slide_name}/'
 
 
         self.current_cell = ''
@@ -413,7 +413,8 @@ class Slide:
         self.group_n = 50
 
         if not self.counts_def_df is None:
-            self.counts_def_df = pd.read_csv(self.counts_def_df)
+            if type(self.counts_def_df)==str:
+                self.counts_def_df = pd.read_csv(self.counts_def_df)
 
         self.counts = pd.read_csv(self.counts_path,index_col=0,engine='python')
         self.cell_types = list(self.counts.index)
@@ -853,7 +854,7 @@ class SlideHeatVis:
             [Input('thumb-img','clickData'), Input('wsi-view','clickData'),
             Input('cell-drop','value'),Input('vis-slider','value'),
             Input('roi-slider','value'),Input('vis-types','value'),
-            Input('thumb-heat','value')]
+            Input('thumb-heat','value'),Input('slide-select','value')]
         )(self.put_square)
 
         self.app.callback(
@@ -880,9 +881,7 @@ class SlideHeatVis:
             Output('notes-p','children')],
             Input('cell-hierarchy','tapNodeData')
         )(self.get_cyto_data)
-        
-
-        
+       
         # Comment out this line when running on the web
         if self.run_type == 'local':
             self.app.run_server(debug=True,use_reloader=True,port=8000)
@@ -1147,15 +1146,18 @@ class SlideHeatVis:
 
         return cell_types_pie, state_bar
 
-    def put_square(self,thumb_click_point,wsi_click_point,cell_val,vis_val,roi_size,vis_type,thumb_view):
+    def put_square(self,thumb_click_point,wsi_click_point,cell_val,vis_val,roi_size,vis_type,thumb_view,slide_val):
         
         vis_val = int((vis_val/100)*255)
         self.patch_size = roi_size*30
         self.current_vis_type = vis_type
         self.current_cell = self.cell_names_key[cell_val]
 
-        if ctx.triggered_id in ['thumb-img','wsi-view',None]:
+        if ctx.triggered_id in ['thumb-img','wsi-view','slide-select',None]:
             
+            if ctx.triggered_id=='slide-select':
+                self.wsi=self.ingest_wsi(slide_val)
+
             if ctx.triggered_id == 'thumb-img':
                 click_point = [thumb_click_point['points'][0]['x'],thumb_click_point['points'][0]['y']]
             elif ctx.triggered_id == 'wsi-view':
@@ -1167,7 +1169,7 @@ class SlideHeatVis:
                 wsi_view_dims = [current_width,current_height]
                 click_point = [k+(i*(self.roi_size/j)) for i,j,k in zip(wsi_click_coords,wsi_view_dims,current_origin)]
 
-            elif ctx.triggered_id is None:
+            elif ctx.triggered_id is None or ctx.triggered_id=='slide-select':
                 click_point = [int(self.roi_size/2),int(self.roi_size/2)]
 
             new_square_image, square_poly = self.update_square_location(click_point,thumb_view,cell_val,vis_val)
@@ -1477,8 +1479,17 @@ class SlideHeatVis:
 
         return f'Label: {label}', f'ID: {id}', f'Notes: {notes}'
     
+    def ingest_wsi(self,slide_name):
 
+        old_paths = [self.wsi.slide_path, self.wsi.spot_path,self.wsi.counts_path,
+                    self.wsi.ftu_path,self.wsi.ann_ids,self.wsi.counts_def_df]
+        
+        wsi_ext = slide_name.split('.')[-1]
+        new_paths = [i.replace(self.wsi.slide_name,slide_name.replace('.'+wsi_ext,'')) if type(i)==str else i for i in old_paths]
 
+        new_slide = Slide(*new_paths)
+
+        return new_slide
 
 
 #if __name__ == '__main__':
