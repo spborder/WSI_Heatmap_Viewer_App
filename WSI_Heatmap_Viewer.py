@@ -35,6 +35,7 @@ from matplotlib import cm
 
 from dash import dcc, ctx, Dash
 import dash_bootstrap_components as dbc
+import dash_cytoscape as cyto
 from dash_extensions.enrich import DashProxy, html, Input, Output, MultiplexerTransform, State
 
 from timeit import default_timer as timer
@@ -266,21 +267,29 @@ def gen_layout(cell_types,slides_available,thumb):
                         height = '250px',
                         width = '500px'
                     )],md=6),
+                
                 dbc.Col([
                     dbc.Label("Cell Hierarchy",html_for="cell-hierarchy"),
-                    html.Img(
+                    cyto.Cytoscape(
                         id = 'cell-hierarchy',
-                        src = './assets/cell_graphics/default_cell_hierarchy.png',
-                        height='350px',
-                        width = '500px'
-                    )],md=6)
-            ])
+                        layout={'name':'preset'},
+                        style = {'width':'100%','height':'400px'},
+                        elements = [
+                            {'data': {'id': 'one', 'label': 'Node 1'}, 'position': {'x': 75, 'y': 75}},
+                            {'data': {'id': 'two', 'label': 'Node 2'}, 'position': {'x': 200, 'y': 200}},
+                            {'data': {'source': 'one', 'target': 'two'}}
+                        ]),
+                    html.Div(id='label-p'),
+                    html.Div(id='id-p'),
+                    html.Div(id='notes-p')
+                    ],md=6)
+            ],align='center')
         ]),
         dbc.CardFooter(
             dbc.Row([
                 dbc.Col([
                     html.Div([
-                        html.P('Provided by cellcards.org')
+                        dcc.Link('Derived from ASCT+B Kidney v1.2',href='https://docs.google.com/spreadsheets/d/1NMfu1bEGNFcTYTFT-jCao_lSbFD8n0ti630iIpRj-hw/edit#gid=949267305')
                     ])
                 ])
             ])
@@ -393,6 +402,10 @@ class Slide:
         self.slide_name = self.slide_name.replace('.'+slide_extension,'')
 
         self.thumbnail_path = f'./assets/thumbnail_masks/{self.slide_name}/'
+        if not os.path.exists(self.thumbnail_path):
+            self.thumbnail_path = f'/home/samborder/mysite/assets/thumbnail_masks/{self.slide_name}'
+
+
         self.current_cell = ''
         self.current_cell_thumb = Image.fromarray(np.uint8(np.zeros((256,256))))
 
@@ -775,12 +788,16 @@ class SlideHeatVis:
                 app,
                 layout,
                 wsi,
-                cell_graphics_key):
+                cell_graphics_key,
+                asct_b_table,
+                run_type = None):
                 
         self.app = app
         self.app.title = "WSI Heatmap Viewer"
         self.app.layout = layout
         self.app._favicon = './assets/favicon.ico'
+
+        self.run_type = run_type
 
         self.wsi = wsi
         # size here is in the form [width,height]
@@ -792,7 +809,11 @@ class SlideHeatVis:
         self.cell_names_key = {}
         for ct in self.cell_graphics_key:
             self.cell_names_key[self.cell_graphics_key[ct]['full']] = ct
-        
+
+
+        # ASCT+B table for cell hierarchy generation
+        self.table_df = asct_b_table    
+
         self.original_thumb = self.wsi.thumb.copy()
         self.roi_size = 2
 
@@ -805,10 +826,18 @@ class SlideHeatVis:
             for ann_name in self.ftus
         }
         
+        # Initializing some parameters
         self.patch_size = self.roi_size*30
         self.batch_size = 16
         self.current_cell = 'PT'
         self.current_barcodes = []
+
+        # Cell Hierarchy related properties
+        self.node_cols = {
+            'Anatomical Structure':{'abbrev':'AS','x_start':25,'y_start':75},
+            'Cell Types':{'abbrev':'CT','x_start':225,'y_start':0},
+            'Genes':{'abbrev':'BGene','x_start':425,'y_start':75}
+        }
 
         # Colormap settings (customize later)
         self.color_map = cm.get_cmap('jet')
@@ -820,7 +849,7 @@ class SlideHeatVis:
         self.app.callback(
             [Output('thumb-img','figure'),Output('wsi-view','figure'),
             Output('roi-pie','figure'),Output('state-bar','figure'),
-            Output('cell-graphic','src'),Output('cell-hierarchy','src')],
+            Output('cell-graphic','src'),Output('cell-hierarchy','elements')],
             [Input('thumb-img','clickData'), Input('wsi-view','clickData'),
             Input('cell-drop','value'),Input('vis-slider','value'),
             Input('roi-slider','value'),Input('vis-types','value'),
@@ -844,9 +873,22 @@ class SlideHeatVis:
             Input('collapse-descrip','children')],
             [State('collapse-content','is_open')]
         )(self.view_instructions)
+
+        self.app.callback(
+            [Output('label-p','children'),
+            Output('id-p','children'),
+            Output('notes-p','children')],
+            Input('cell-hierarchy','tapNodeData')
+        )(self.get_cyto_data)
+        
+
         
         # Comment out this line when running on the web
-        self.app.run_server(debug=True,use_reloader=True,port=8000)
+        if self.run_type == 'local':
+            self.app.run_server(debug=True,use_reloader=True,port=8000)
+
+        elif self.run_type == 'AWS':
+            self.app.run_server(debug=True,use_reloader=False,port=8000)
 
     def view_instructions(self,n,text,is_open):
         if text == 'View Instructions':
@@ -1263,7 +1305,8 @@ class SlideHeatVis:
 
         # Loading the cell-graphic and hierarchy image
         cell_graphic = self.cell_graphics_key[self.current_cell]['graphic']
-        cell_hierarchy = self.cell_graphics_key[self.current_cell]['hierarchy']
+        #cell_hierarchy = self.cell_graphics_key[self.current_cell]['hierarchy']
+        cell_hierarchy = self.gen_cyto()
 
         if cell_graphic == "":
             cell_graphic = './assets/cell_graphics/default_cell_graphic.png'
@@ -1321,34 +1364,165 @@ class SlideHeatVis:
 
         return hover_text
         
+    def gen_cyto(self):
+
+        cyto_elements = []
+
+        # Getting cell sub-types under that main cell
+        cell_subtypes = self.cell_graphics_key[self.current_cell]['subtypes']
+
+        # Getting all the rows that contain these sub-types
+        table_data = self.table_df.dropna(subset = ['CT/1/ABBR'])
+        cell_data = table_data[table_data['CT/1/ABBR'].isin(cell_subtypes)]
+
+        # cell type
+        cyto_elements.append(
+            {'data':{'id':'Main_Cell','label':self.current_cell},'position':{'x':self.node_cols['Cell Types']['x_start'],'y':self.node_cols['Cell Types']['y_start']}}
+        )
+
+        # Getting the anatomical structures for this cell type
+        an_structs = cell_data.filter(regex=self.node_cols['Anatomical Structure']['abbrev']).dropna(axis=1)
+
+        an_start_y = self.node_cols['Anatomical Structure']['y_start']
+        col_vals = an_structs.columns.values.tolist()
+        col_vals = [i for i in col_vals if 'LABEL' in i]
+
+        for idx,col in enumerate(col_vals):
+            cyto_elements.append(
+                {'data':{'id':col,'label':an_structs[col].tolist()[0]},'position':{'x':self.node_cols['Anatomical Structure']['x_start'],'y':an_start_y}}
+            )
+            
+            if idx>0:
+                cyto_elements.append(
+                    {'data':{'source':col_vals[idx-1],'target':col}}
+                )
+            an_start_y+=75
+        
+        last_struct = col
+        cyto_elements.append(
+            {'data':{'source':last_struct,'target':'Main_Cell'}}
+        )
+        
+        cell_start_y = self.node_cols['Cell Types']['y_start']
+        gene_start_y = self.node_cols['Genes']['y_start']
+        for idx_1,c in enumerate(cell_subtypes):
+
+            matching_rows = table_data[table_data['CT/1/ABBR'].str.match(c)]
+
+            if not matching_rows.empty:
+                cell_start_y+=75
+
+                cyto_elements.append(
+                    {'data':{'id':f'ST_{idx_1}','label':c},'position':{'x':self.node_cols['Cell Types']['x_start'],'y':cell_start_y}}
+                )
+                cyto_elements.append(
+                    {'data':{'source':'Main_Cell','target':f'ST_{idx_1}'}}
+                )
+
+                # Getting genes
+                genes = matching_rows.filter(regex=self.node_cols['Genes']['abbrev']).dropna(axis=1)
+                col_vals = genes.columns.values.tolist()
+                col_vals = [i for i in col_vals if 'LABEL' in i]
+
+                for idx,col in enumerate(col_vals):
+                    cyto_elements.append(
+                        {'data':{'id':col,'label':genes[col].tolist()[0]},'position':{'x':self.node_cols['Genes']['x_start'],'y':gene_start_y}}
+                    )
+
+                    cyto_elements.append(
+                        {'data':{'source':col,'target':f'ST_{idx_1}'}}
+                    )
+                    gene_start_y+=75
+
+        return cyto_elements
+
+    def get_cyto_data(self,clicked):
+
+        if 'ST' in clicked['id']:
+            table_data = self.table_df.dropna(subset=['CT/1/ABBR'])
+            table_data = table_data[table_data['CT/1/ABBR'].str.match(clicked['label'])]
+            print(table_data)
+
+            label = clicked['label']
+            try:
+                id = table_data['CT/1/ID'].tolist()[0]
+            except IndexError:
+                print(table_data['CT/1/ID'].tolist())
+                id = ''
+            
+            try:
+                notes = table_data['CT/1/NOTES'].tolist()[0]
+            except:
+                print(table_data['CT/1/NOTES'])
+                notes = ''
+
+        elif 'Main_Cell' not in clicked['id']:
+            
+            table_data = self.table_df.dropna(subset=[clicked['id']])
+            table_data = table_data[table_data[clicked['id']].str.match(clicked['label'])]
+
+            base_label = '/'.join(clicked['id'].split('/')[0:-1])
+            label = table_data[base_label+'/LABEL'].tolist()[0]
+
+            id = table_data[base_label+'/ID'].tolist()[0]
+            try:
+                notes = table_data[base_label+'/NOTES'].tolist()[0]
+            except KeyError:
+                notes = ''
+
+        else:
+            label = ''
+            id = ''
+            notes = ''
+
+        return f'Label: {label}', f'ID: {id}', f'Notes: {notes}'
+    
+
+
+
 
 #if __name__ == '__main__':
 def app(*args):
 
-    slide_name = 'XY01_IU-21-015F.svs'
     run_type = 'local'
 
-    slides_available = [slide_name]
+    try:
+        run_type = os.environ['RUNTYPE']
+    except:
+        print(f'Using {run_type} run type')
+
     
     if run_type == 'local':
         # For local testing
         base_dir = '/mnt/c/Users/Sam/Desktop/HIVE/'
+
+        available_slides = glob(base_dir+'FFPE/*.svs')
+        slide_names = [i.split('/')[-1] for i in available_slides]
+        slide_name = slide_names[0]
+
         slide_path = base_dir+'FFPE/'+slide_name
         spot_path = base_dir+'FFPE/Spot_Coordinates_large/'+slide_name.replace('.svs','_Large.xml')
         counts_path = base_dir+'counts_data/FFPE/CellTypeFractions_SpotLevel/V10S15-103_'+slide_name.replace('.svs','_cellfract.csv')
         counts_def_path = base_dir+'counts_data/Cell_SubTypes_Grouped.csv'
         ftu_path = base_dir+'SpotNet_NonEssential_Files/CellAnnotations_GeoJSON/'+slide_name.replace('.svs','.geojson')
         cell_graphics_path = 'graphic_reference.json'
+        asct_b_path = 'Kidney_v1.2 - Kidney_v1.2.csv'
 
     elif run_type == 'web':
         # For test deployment
         base_dir = os.getcwd()+'/mysite/'
+
+        available_slides = glob(base_dir+'/slide_info/*.svs')
+        slide_names = [i.split('/')[-1] for i in available_slides]
+        slide_name = slide_names[0]
+
         slide_path = base_dir+'/slide_info/'+slide_name
         spot_path = slide_path.replace('.svs','_Large.xml')
         counts_path = base_dir+'/slide_info/V10S15-103_'+slide_name.replace('.svs','_cellfract.csv')
         counts_def_path = slide_path.replace(slide_name,'Cell_SubTypes_Grouped.csv')
         ftu_path = slide_path.replace('.svs','.geojson')
         cell_graphics_path = base_dir+'graphic_reference.json'
+        asct_b_path = base_dir+'Kidney_v1.2 - Kidney_v1.2.csv'
 
     ann_ids = None
 
@@ -1359,14 +1533,18 @@ def app(*args):
     for ct in cell_graphics_json:
         cell_names.append(cell_graphics_json[ct]['full'])
 
+
+    # Adding ASCT+B table to files
+    asct_b_table = pd.read_csv(asct_b_path,skiprows=list(range(10)))
+
     wsi = Slide(slide_path,spot_path,counts_path,ftu_path,ann_ids,counts_def_path)
 
     external_stylesheets = [dbc.themes.LUX]
 
-    main_layout = gen_layout(cell_names,slides_available,wsi.thumb)
+    main_layout = gen_layout(cell_names,slide_names,wsi.thumb)
 
     main_app = DashProxy(__name__,external_stylesheets=external_stylesheets,transforms = [MultiplexerTransform()])
-    vis_app = SlideHeatVis(main_app,main_layout,wsi,cell_graphics_key)
+    vis_app = SlideHeatVis(main_app,main_layout,wsi,cell_graphics_key,asct_b_table,run_type)
 
     if run_type=='web':
         return vis_app.app
