@@ -272,7 +272,7 @@ def gen_layout(cell_types,slides_available,thumb):
                     dbc.Label("Cell Hierarchy",html_for="cell-hierarchy"),
                     cyto.Cytoscape(
                         id = 'cell-hierarchy',
-                        layout={'name':'preset'},
+                        layout={'name':'cose'},
                         style = {'width':'100%','height':'400px'},
                         elements = [
                             {'data': {'id': 'one', 'label': 'Node 1'}, 'position': {'x': 75, 'y': 75}},
