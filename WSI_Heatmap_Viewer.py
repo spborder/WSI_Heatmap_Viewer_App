@@ -823,9 +823,9 @@ class SlideHeatVis:
 
         # Cell Hierarchy related properties
         self.node_cols = {
-            'Anatomical Structure':{'abbrev':'AS','x_start':25,'y_start':75},
-            'Cell Types':{'abbrev':'CT','x_start':225,'y_start':0},
-            'Genes':{'abbrev':'BGene','x_start':425,'y_start':75}
+            'Anatomical Structure':{'abbrev':'AS','x_start':50,'y_start':75},
+            'Cell Types':{'abbrev':'CT','x_start':250,'y_start':0},
+            'Genes':{'abbrev':'BGene','x_start':450,'y_start':75}
         }
 
         # Colormap settings (customize later)
@@ -1144,6 +1144,7 @@ class SlideHeatVis:
             
             if ctx.triggered_id=='slide-select':
                 self.wsi=self.ingest_wsi(slide_val)
+                self.wsi_size = self.wsi.dimensions
 
             if ctx.triggered_id == 'thumb-img':
                 click_point = [thumb_click_point['points'][0]['x'],thumb_click_point['points'][0]['y']]
