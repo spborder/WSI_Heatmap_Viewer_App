@@ -823,9 +823,12 @@ class SlideHeatVis:
 
         # Cell Hierarchy related properties
         self.node_cols = {
-            'Anatomical Structure':{'abbrev':'AS','x_start':50,'y_start':75},
-            'Cell Types':{'abbrev':'CT','x_start':250,'y_start':0},
-            'Genes':{'abbrev':'BGene','x_start':450,'y_start':75}
+            'Anatomical Structure':{'abbrev':'AS','x_start':50,'y_start':75,
+                                    'base_url':'https://www.ebi.ac.uk/ols/ontologies/uberon/terms?iri=http%3A%2F%2Fpurl.obolibrary.org%2Fobo%2FUBERON_'},
+            'Cell Types':{'abbrev':'CT','x_start':250,'y_start':0,
+                          'base_url':'https://www.ebi.ac.uk/ols/ontologies/uberon/terms?iri=http%3A%2F%2Fpurl.obolibrary.org%2Fobo%2FCL_'},
+            'Genes':{'abbrev':'BGene','x_start':450,'y_start':75,
+                     'base_url':'https://www.genenames.org/data/gene-symbol-report/#!/hgnc_id/'}
         }
 
         # Colormap settings (customize later)
@@ -1422,11 +1425,14 @@ class SlideHeatVis:
         if 'ST' in clicked['id']:
             table_data = self.table_df.dropna(subset=['CT/1/ABBR'])
             table_data = table_data[table_data['CT/1/ABBR'].str.match(clicked['label'])]
-            print(table_data)
 
             label = clicked['label']
             try:
                 id = table_data['CT/1/ID'].tolist()[0]
+                # Modifying base url to make this link to UBERON
+                base_url = self.node_cols['Cell Types']['base_url']
+                new_url = base_url+id.replace('CL:','')
+
             except IndexError:
                 print(table_data['CT/1/ID'].tolist())
                 id = ''
@@ -1446,6 +1452,16 @@ class SlideHeatVis:
             label = table_data[base_label+'/LABEL'].tolist()[0]
 
             id = table_data[base_label+'/ID'].tolist()[0]
+            
+            if self.node_cols['Anatomical Structure']['abbrev'] in clicked['id']:
+                base_url = self.node_cols['Anatomical Structure']['base_url']
+
+                new_url = base_url+id.replace('UBERON:','')
+            else:
+                base_url = self.node_cols['Genes']['base_url']
+
+                new_url = base_url+id.replace('HGNC:','')
+
             try:
                 notes = table_data[base_label+'/NOTES'].tolist()[0]
             except KeyError:
@@ -1455,8 +1471,10 @@ class SlideHeatVis:
             label = ''
             id = ''
             notes = ''
+            new_url = ''
 
-        return f'Label: {label}', f'ID: {id}', f'Notes: {notes}'
+
+        return f'Label: {label}', dcc.Link(f'ID: {id}', href = new_url), f'Notes: {notes}'
     
     def ingest_wsi(self,slide_name):
 
