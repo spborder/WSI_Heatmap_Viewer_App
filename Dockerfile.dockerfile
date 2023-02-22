@@ -11,7 +11,7 @@ RUN apt-get update && \
     openslide-tools \
     python3-openslide
 
-RUN git clone https://github.com/spborder/WSI_Heatmap_Viewer_App.git
+#RUN git clone https://github.com/spborder/WSI_Heatmap_Viewer_App.git
 
 COPY . ./
 RUN python3 -m pip install --upgrade pip

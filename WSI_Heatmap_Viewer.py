@@ -93,8 +93,8 @@ def gen_layout(cell_types,slides_available,thumb):
         sticky="top",
         style={'margin-bottom':'20px'}
     )
-    
-    
+
+
     # Description and instructions card
     description = dbc.Card(
         children = [
@@ -255,6 +255,32 @@ def gen_layout(cell_types,slides_available,thumb):
         ])
     ])
 
+    # Stylesheet for cyto plot thingy
+    cyto_style = [
+        {
+        'selector':'node',
+        'style':{
+            'label':'data(label)',
+            'width':45,
+            'height':45,
+            'background-color':'white',
+            'background-fit':'cover',
+            'background-clip':'none',
+            'background-image-opacity':1,
+            #'border-opacity':1,
+            #'border-width':2,
+            'background-image':'data(url)',
+            }
+        },
+        {
+        'selector':'edge',
+        'style':{
+            'line-width':35,
+            'line-color':'blue'
+        }
+        }
+    ]
+
     # Cell card graphic and hierarchy
     cell_card = dbc.Card([
         dbc.CardBody([
@@ -272,8 +298,9 @@ def gen_layout(cell_types,slides_available,thumb):
                     dbc.Label("Cell Hierarchy",html_for="cell-hierarchy"),
                     cyto.Cytoscape(
                         id = 'cell-hierarchy',
-                        layout={'name':'cose'},
+                        layout={'name':'preset'},
                         style = {'width':'100%','height':'400px'},
+                        stylesheet=cyto_style,
                         elements = [
                             {'data': {'id': 'one', 'label': 'Node 1'}, 'position': {'x': 75, 'y': 75}},
                             {'data': {'id': 'two', 'label': 'Node 2'}, 'position': {'x': 200, 'y': 200}},
@@ -1361,7 +1388,12 @@ class SlideHeatVis:
 
         # cell type
         cyto_elements.append(
-            {'data':{'id':'Main_Cell','label':self.current_cell},'position':{'x':self.node_cols['Cell Types']['x_start'],'y':self.node_cols['Cell Types']['y_start']}}
+            {'data':{'id':'Main_Cell',
+                     'label':self.current_cell,
+                     'url':'./assets/cell.PNG'},
+            'classes': 'CT',
+            'position':{'x':self.node_cols['Cell Types']['x_start'],'y':self.node_cols['Cell Types']['y_start']},
+                     }
         )
 
         # Getting the anatomical structures for this cell type
@@ -1373,7 +1405,12 @@ class SlideHeatVis:
 
         for idx,col in enumerate(col_vals):
             cyto_elements.append(
-                {'data':{'id':col,'label':an_structs[col].tolist()[0]},'position':{'x':self.node_cols['Anatomical Structure']['x_start'],'y':an_start_y}}
+                {'data':{'id':col,
+                         'label':an_structs[col].tolist()[0],
+                         'url':'./assets/kidney.PNG'},
+                'classes':'AS',
+                'position':{'x':self.node_cols['Anatomical Structure']['x_start'],'y':an_start_y}
+                         }
             )
             
             if idx>0:
@@ -1397,7 +1434,11 @@ class SlideHeatVis:
                 cell_start_y+=75
 
                 cyto_elements.append(
-                    {'data':{'id':f'ST_{idx_1}','label':c},'position':{'x':self.node_cols['Cell Types']['x_start'],'y':cell_start_y}}
+                    {'data':{'id':f'ST_{idx_1}',
+                             'label':c,
+                             'url':'./assets/cell.PNG'},
+                    'classes':'CT',
+                    'position':{'x':self.node_cols['Cell Types']['x_start'],'y':cell_start_y}}
                 )
                 cyto_elements.append(
                     {'data':{'source':'Main_Cell','target':f'ST_{idx_1}'}}
@@ -1410,7 +1451,11 @@ class SlideHeatVis:
 
                 for idx,col in enumerate(col_vals):
                     cyto_elements.append(
-                        {'data':{'id':col,'label':genes[col].tolist()[0]},'position':{'x':self.node_cols['Genes']['x_start'],'y':gene_start_y}}
+                        {'data':{'id':col,
+                                 'label':genes[col].tolist()[0],
+                                 'url':'./assets/gene.PNG'},
+                        'classes':'G',
+                        'position':{'x':self.node_cols['Genes']['x_start'],'y':gene_start_y}}
                     )
 
                     cyto_elements.append(
