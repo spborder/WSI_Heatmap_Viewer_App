@@ -12,11 +12,14 @@ RUN apt-get update && \
     python3-openslide
 
 #RUN git clone https://github.com/spborder/WSI_Heatmap_Viewer_App.git
+ENV RUNTYPE=='AWS'
 
 COPY . ./
 RUN python3 -m pip install --upgrade pip
 RUN python3 -m pip install -r ./requirements.txt --no-cache-dir
 RUN python3 -m pip freeze
+
+EXPOSE 8000
 
 ENTRYPOINT [ "python3" ]
 CMD ["WSI_Heatmap_Viewer.py"]

@@ -26,6 +26,7 @@ from tqdm import tqdm
 import shapely
 from shapely.geometry import Polygon, Point, shape
 from skimage.draw import polygon
+from skimage.transform import resize
 import geojson
 
 import plotly.express as px
@@ -124,7 +125,6 @@ def gen_layout(cell_types,slides_available,thumb):
     )
     
     # Slide selection
-    
     slide_select = dbc.Card(
         id = 'slide-select-card',
         children = [
@@ -153,7 +153,6 @@ def gen_layout(cell_types,slides_available,thumb):
         ],style={'margin-bottom':'20px'}
     )
     
-
     # View of WSI
     wsi_view = [
         dbc.Card(
@@ -323,6 +322,76 @@ def gen_layout(cell_types,slides_available,thumb):
         )
     ])
     
+    ftu_list = ['glomerulus','Tubules']
+    plot_types = ['TSNE','UMAP']
+    labels = ['Cluster','image_id']
+    # Cluster viewer tab
+    cluster_card = dbc.Card([
+        dbc.Row([
+            dbc.Col([
+                html.Div(
+                    dcc.Graph(id='cluster-graph',figure=go.Figure())
+                )
+            ]),
+            dbc.Col([
+                dcc.Loading(
+                    id = 'loading-image',
+                    children = [
+                        dcc.Graph(id='selected-image',figure=go.Figure())
+                    ]
+                ),
+                html.Div(id='selected-image-info')
+            ]),
+            dbc.Col([
+                dbc.Card(
+                    id= 'plot-options',
+                    children = [
+                        dbc.CardHeader('Plot Options'),
+                        dbc.CardBody([
+                            dbc.Label('Functional Tissue Unit Type',html_for='ftu-select'),
+                            dbc.Row([
+                                dbc.Col(
+                                    html.Div(
+                                        dcc.Dropdown(
+                                            ftu_list,
+                                            ftu_list[0],
+                                            id='ftu-select'
+                                        )
+                                    )
+                                )
+                            ]),
+                            html.B(),
+                            dbc.Label('Type of plot',html_for='plot-select'),
+                            dbc.Row([
+                                dbc.Col(
+                                    html.Div(
+                                        dcc.Dropdown(
+                                            plot_types,
+                                            plot_types[0],
+                                            id='plot-select'
+                                        )
+                                    )
+                                )
+                            ]),
+                            html.B(),
+                            dbc.Label('Sample Labels',html_for='plot-select'),
+                            dbc.Row([
+                                dbc.Col(
+                                    html.Div(
+                                        dcc.Dropdown(
+                                            labels,
+                                            labels[0],
+                                            id='label-select'
+                                        )
+                                    )
+                                )
+                            ])
+                        ])
+                    ]
+                )
+            ])
+        ],align='center')
+    ])
 
     # Tools for selecting regions, transparency, and cells
     tools = [
@@ -359,7 +428,8 @@ def gen_layout(cell_types,slides_available,thumb):
                             dbc.Tabs([
                                 #dbc.Tab(thumbnail_select, label = "Thumbnail ROI"),
                                 dbc.Tab(roi_pie, label = "Cell Composition"),
-                                dbc.Tab(cell_card,label = "Cell Card")
+                                dbc.Tab(cell_card,label = "Cell Card"),
+                                dbc.Tab(cluster_card,label = 'Morphological Clustering')
                             ])
                         ])
                     ])
@@ -807,6 +877,8 @@ class SlideHeatVis:
                 wsi,
                 cell_graphics_key,
                 asct_b_table,
+                cluster_metadata,
+                slide_list,
                 run_type = None):
                 
         self.app = app
@@ -816,6 +888,10 @@ class SlideHeatVis:
 
         self.run_type = run_type
 
+        # clustering related properties
+        self.metadata = cluster_metadata
+
+        self.slide_list = slide_list
         self.wsi = wsi
         # size here is in the form [width,height]
         self.wsi_size = self.wsi.dimensions
@@ -831,7 +907,7 @@ class SlideHeatVis:
         self.table_df = asct_b_table    
 
         self.original_thumb = self.wsi.thumb.copy()
-        self.roi_size = 2
+        self.roi_size = 5
 
         # FTU settings
         self.ftus = list(self.wsi.ann_ids.keys())
@@ -899,13 +975,27 @@ class SlideHeatVis:
             Output('notes-p','children')],
             Input('cell-hierarchy','tapNodeData')
         )(self.get_cyto_data)
+
+        self.app.callback(
+            [Input('ftu-select','value'),
+            Input('plot-select','value'),
+            Input('label-select','value')],
+            Output('cluster-graph','figure')
+        )(self.update_graph)
+
+        self.app.callback(
+            [Input('cluster-graph','clickData'),
+            Input('cluster-graph','selectedData')],
+            Output('selected-image','figure')
+        )(self.update_selected)
+
        
         # Comment out this line when running on the web
         if self.run_type == 'local':
             self.app.run_server(debug=True,use_reloader=True,port=8000)
 
         elif self.run_type == 'AWS':
-            self.app.run_server(debug=True,use_reloader=False,port=8000)
+            self.app.run_server(host = '0.0.0.0',debug=True,use_reloader=False,port=8000)
 
     def view_instructions(self,n,text,is_open):
         if text == 'View Instructions':
@@ -1101,14 +1191,16 @@ class SlideHeatVis:
         #heatmap = self.current_vis.copy()
 
         if self.current_vis_type == 'FTUs':
+            
+            try:
+                # overlapping ftu boundaries
+                zero_mask_outlines = np.where(outlines.sum(axis=-1)==0,0,255)
+                outline_mask_4D = np.concatenate((outlines,zero_mask_outlines[:,:,None]),axis=-1)
+                outline_mask_4D = Image.fromarray(np.uint8(outline_mask_4D)).convert('RGBA')
 
-            # overlapping ftu boundaries
-            zero_mask_outlines = np.where(outlines.sum(axis=-1)==0,0,255)
-            outline_mask_4D = np.concatenate((outlines,zero_mask_outlines[:,:,None]),axis=-1)
-            outline_mask_4D = Image.fromarray(np.uint8(outline_mask_4D)).convert('RGBA')
-
-            self.current_ftu_outlines = outline_mask_4D
-
+                self.current_ftu_outlines = outline_mask_4D
+            except UnboundLocalError:
+                print('No current FTUs')
         return heatmap
 
     def gen_projected_poly(self):
@@ -1390,7 +1482,7 @@ class SlideHeatVis:
         cyto_elements.append(
             {'data':{'id':'Main_Cell',
                      'label':self.current_cell,
-                     'url':'./assets/cell.PNG'},
+                     'url':'./assets/cell.png'},
             'classes': 'CT',
             'position':{'x':self.node_cols['Cell Types']['x_start'],'y':self.node_cols['Cell Types']['y_start']},
                      }
@@ -1407,7 +1499,7 @@ class SlideHeatVis:
             cyto_elements.append(
                 {'data':{'id':col,
                          'label':an_structs[col].tolist()[0],
-                         'url':'./assets/kidney.PNG'},
+                         'url':'./assets/kidney.png'},
                 'classes':'AS',
                 'position':{'x':self.node_cols['Anatomical Structure']['x_start'],'y':an_start_y}
                          }
@@ -1436,7 +1528,7 @@ class SlideHeatVis:
                 cyto_elements.append(
                     {'data':{'id':f'ST_{idx_1}',
                              'label':c,
-                             'url':'./assets/cell.PNG'},
+                             'url':'./assets/cell.png'},
                     'classes':'CT',
                     'position':{'x':self.node_cols['Cell Types']['x_start'],'y':cell_start_y}}
                 )
@@ -1453,7 +1545,7 @@ class SlideHeatVis:
                     cyto_elements.append(
                         {'data':{'id':col,
                                  'label':genes[col].tolist()[0],
-                                 'url':'./assets/gene.PNG'},
+                                 'url':'./assets/gene.png'},
                         'classes':'G',
                         'position':{'x':self.node_cols['Genes']['x_start'],'y':gene_start_y}}
                     )
@@ -1533,6 +1625,100 @@ class SlideHeatVis:
 
         return new_slide
 
+    def update_graph(self,ftu,plot,label):
+        
+        self.current_ftu = ftu
+        # Filtering by selected FTU
+        current_data = self.metadata[self.metadata['ftu_type'].str.match(ftu)]
+
+        if plot=='TSNE':
+            plot_data_x = current_data['x_tsne'].tolist()
+            plot_data_y = current_data['y_tsne'].tolist()
+
+        elif plot=='UMAP':
+            plot_data_x = current_data['x_umap'].tolist()
+            plot_data_y = current_data['y_umap'].tolist()
+
+        custom_data = list(current_data.index)
+        label_data = current_data[label].tolist()
+
+        graph_df = pd.DataFrame({'x':plot_data_x,'y':plot_data_y,'ID':custom_data,'Label':label_data})
+
+        cluster_graph = go.Figure(px.scatter(graph_df,x='x',y='y',custom_data=['ID'],color='Label'))
+        cluster_graph.update_layout(
+            margin=dict(l=0,r=0,t=0,b=0)
+        )
+
+
+        return cluster_graph
+
+    def grab_image(self,sample_info):
+
+        slide_name = sample_info['image_id']
+        #print(slide_name)
+        if type(slide_name)==str:
+            slide_name = [slide_name.replace('V10S15-103_','')]
+        else:
+            slide_name = [i.replace('V10S15-103_','') for i in slide_name.tolist()]
+
+        #print(slide_name)
+        img_list = []
+        for idx,s in enumerate(slide_name):
+            # openslide needs min_x, min_y, width, height
+            try:
+                min_x = int(sample_info['Min_x_coord'])
+                min_y = int(sample_info['Min_y_coord'])
+                width = int(sample_info['Max_x_coord'])-min_x
+                height = int(sample_info['Max_y_coord'])-min_y
+            except:
+                min_x = int(sample_info['Min_x_coord'].tolist()[idx])
+                min_y = int(sample_info['Min_y_coord'].tolist()[idx])
+                width = int(sample_info['Max_x_coord'].tolist()[idx])-min_x
+                height = int(sample_info['Max_y_coord'].tolist()[idx])-min_y      
+
+            slide_path = [i for i in self.slide_list if s in i]
+
+            slide_path = slide_path[0]
+            #print(slide_path)
+
+            wsi = openslide.OpenSlide(slide_path)
+            slide_region = wsi.read_region((min_x,min_y),0,(width,height))
+            openslide.OpenSlide.close(wsi)
+
+            img_list.append(resize(np.uint8(np.array(slide_region))[:,:,0:3],output_shape=(256,256,3)))
+
+        return img_list        
+
+    def update_selected(self,hover,selected):
+
+        if 'cluster-graph.selectedData' in list(ctx.triggered_prop_ids.keys()):
+            sample_ids = [i['customdata'][0] for i in selected['points']]
+            sample_info = self.metadata.loc[sample_ids]
+        else:
+            if hover is not None:
+                sample_id = hover['points'][0]['customdata']
+                sample_info = self.metadata.loc[sample_id]
+
+            else:
+                sample_info = self.metadata.iloc[0,:]
+
+        current_image = self.grab_image(sample_info)
+        if len(current_image)==1:
+            selected_image = go.Figure(px.imshow(current_image[0]))
+        else:
+            selected_image = go.Figure(px.imshow(np.stack(current_image,axis=0),animation_frame=0,binary_string=True,labels=dict(animation_frame=self.current_ftu)))
+        
+        selected_image.update_layout(
+            margin=dict(l=0,r=0,t=0,b=0)
+        )
+        image_metadata = json.dumps(sample_info.to_dict())
+
+
+        return selected_image
+    
+
+
+
 
 #if __name__ == '__main__':
 def app(*args):
@@ -1544,7 +1730,10 @@ def app(*args):
     except:
         print(f'Using {run_type} run type')
 
-    
+    print(f'Using {run_type} run type')
+    print(f'Current working directory is: {os.getcwd()}')
+    print(f'Contents of current working directory is: {os.listdir(os.getcwd())}')
+
     if run_type == 'local':
         # For local testing
         base_dir = '/mnt/c/Users/Sam/Desktop/HIVE/'
@@ -1561,21 +1750,32 @@ def app(*args):
         cell_graphics_path = 'graphic_reference.json'
         asct_b_path = 'Kidney_v1.2 - Kidney_v1.2.csv'
 
-    elif run_type == 'web':
-        # For test deployment
-        base_dir = os.getcwd()+'/mysite/'
+        metadata_path = './assets/cluster_metadata/'
 
-        available_slides = glob(base_dir+'/slide_info/*.svs')
+    elif run_type == 'web' or run_type=='AWS':
+        # For test deployment
+        if run_type == 'web':
+            base_dir = os.getcwd()+'/mysite/'
+
+            slide_info_path = base_dir+'/slide_info/'
+        else:
+            base_dir = os.getcwd()
+
+            slide_info_path = base_dir+'assets/slide_info/'
+
+        available_slides = glob(slide_info_path+'*.svs')
         slide_names = [i.split('/')[-1] for i in available_slides]
         slide_name = slide_names[0]
 
-        slide_path = base_dir+'/slide_info/'+slide_name
+        slide_path = slide_info_path+slide_name
         spot_path = slide_path.replace('.svs','_Large.xml')
-        counts_path = base_dir+'/slide_info/V10S15-103_'+slide_name.replace('.svs','_cellfract.csv')
+        counts_path = slide_info_path+'V10S15-103_'+slide_name.replace('.svs','_cellfract.csv')
         counts_def_path = slide_path.replace(slide_name,'Cell_SubTypes_Grouped.csv')
         ftu_path = slide_path.replace('.svs','.geojson')
         cell_graphics_path = base_dir+'graphic_reference.json'
         asct_b_path = base_dir+'Kidney_v1.2 - Kidney_v1.2.csv'
+
+        metadata_path = base_dir+'assets/cluster_metadata/'
 
     ann_ids = None
 
@@ -1586,6 +1786,12 @@ def app(*args):
     for ct in cell_graphics_json:
         cell_names.append(cell_graphics_json[ct]['full'])
 
+    # Reading in clustering metadata
+    glom_metadata = json.load(open(metadata_path+'FFPE_SpTx_Glomeruli.json'))
+    tub_metadata = json.load(open(metadata_path+'FFPE_SpTx_Tubules.json'))
+
+    metadata = pd.DataFrame.from_dict(glom_metadata,orient='index')
+    metadata = pd.concat([metadata,pd.DataFrame.from_dict(tub_metadata,orient='index')],axis=0,ignore_index=True)
 
     # Adding ASCT+B table to files
     asct_b_table = pd.read_csv(asct_b_path,skiprows=list(range(10)))
@@ -1597,7 +1803,7 @@ def app(*args):
     main_layout = gen_layout(cell_names,slide_names,wsi.thumb)
 
     main_app = DashProxy(__name__,external_stylesheets=external_stylesheets,transforms = [MultiplexerTransform()])
-    vis_app = SlideHeatVis(main_app,main_layout,wsi,cell_graphics_key,asct_b_table,run_type)
+    vis_app = SlideHeatVis(main_app,main_layout,wsi,cell_graphics_key,asct_b_table,metadata, available_slides,run_type)
 
     if run_type=='web':
         return vis_app.app
