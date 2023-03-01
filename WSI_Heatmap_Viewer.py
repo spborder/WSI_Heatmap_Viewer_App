@@ -37,12 +37,15 @@ from matplotlib import cm
 from dash import dcc, ctx, Dash
 import dash_bootstrap_components as dbc
 import dash_cytoscape as cyto
+import dash_leaflet as dl
+import dash_leaflet.express as dlx
+from dash_extensions.javascript import assign, Namespace, arrow_function
 from dash_extensions.enrich import DashProxy, html, Input, Output, MultiplexerTransform, State
 
 from timeit import default_timer as timer
 
 
-def gen_layout(cell_types,slides_available,thumb):
+def gen_layout(cell_types,slides_available, center_point, map_dict, spot_dict):
 
     # Header
     header = dbc.Navbar(
@@ -51,8 +54,8 @@ def gen_layout(cell_types,slides_available,thumb):
                 dbc.Col(html.Img(id='logo',src=('./assets/Lab_Logo_white.png'),height='75px'),md='auto'),
                 dbc.Col([
                     html.Div([
-                        html.H3('Whole Slide Image Cell Distribution'),
-                        html.P('Spatial Transcriptomics')
+                        html.H3('FUSION'),
+                        html.P('Functional Unit State Identification and Navigation with WSI')
                     ],id='app-title')
                 ],md=True,align='center')
             ],align='center'),
@@ -61,6 +64,16 @@ def gen_layout(cell_types,slides_available,thumb):
                     dbc.NavbarToggler(id='navbar-toggler'),
                     dbc.Collapse(
                         dbc.Nav([
+                            dbc.NavItem(
+                                dbc.Button(
+                                    'User Survey',
+                                    id = 'user-survey-button',
+                                    outline = True,
+                                    color = 'primary',
+                                    href = ' https://ufl.qualtrics.com/jfe/form/SV_1A0CcKNLhTnFCHI',
+                                    style = {'textTransform':'none'}
+                                )
+                            ),
                             dbc.NavItem(
                                 dbc.Button(
                                     "Cell Cards",
@@ -77,7 +90,7 @@ def gen_layout(cell_types,slides_available,thumb):
                                     id='lab-web-button',
                                     outline=True,
                                     color='primary',
-                                    href='https://github.com/SarderLab',
+                                    href='https://cmilab.nephrology.medicine.ufl.edu',
                                     style={"textTransform":"none"}
                                 )
                             )
@@ -92,9 +105,8 @@ def gen_layout(cell_types,slides_available,thumb):
         dark=True,
         color="dark",
         sticky="top",
-        style={'margin-bottom':'20px'}
+        style={'marginBottom':'20px'}
     )
-
 
     # Description and instructions card
     description = dbc.Card(
@@ -121,7 +133,7 @@ def gen_layout(cell_types,slides_available,thumb):
                     ),id='collapse-content',is_open=False
                 )
             ])
-        ],style={'margin-bottom':'20px'}
+        ],style={'marginBottom':'20px'}
     )
     
     # Slide selection
@@ -150,87 +162,39 @@ def gen_layout(cell_types,slides_available,thumb):
                     )
                 ])
             ])
-        ],style={'margin-bottom':'20px'}
+        ],style={'marginBottom':'20px'}
     )
     
     # View of WSI
-    wsi_view = [
-        dbc.Card(
-            id='wsi-card',
-            children=[
-                dbc.CardHeader("Whole Slide Image Viewer"),
-                dbc.CardBody([
-                    html.Div(
-                        id='cell-heat-loader',
-                        children=[
-                            dcc.Loading(
-                                id="cell-loading",
-                                type="cube",
-                                children=[
-                                    dcc.Graph(
-                                        id="wsi-view",
-                                        figure=go.Figure())
-
-                                ]
-                            ),
-                            html.Div(
-                                id = 'current-hover'
-                            )
+    # Under development, full WSI view take as input a dict of {structure_name: {geojson:geojson, id:id, bounds_color:color, hover_color:color}}
+    wsi_view = dbc.Card([
+        dbc.CardHeader('Whole Slide Image Viewer'),
+        dbc.Row([
+            html.Div(
+                dl.Map(center = center_point, zoom = 12, minZoom=11, children = [
+                    dl.TileLayer(url = map_dict['url'], id = 'slide-tile'),
+                    dl.LayersControl(id = 'layer-control', children = 
+                        [
+                            dl.Overlay(
+                                dl.LayerGroup(
+                                    dl.GeoJSON(data = map_dict['FTUs'][struct]['geojson'], id = map_dict['FTUs'][struct]['id'], options = dict(color = map_dict['FTUs'][struct]['color']),
+                                        hoverStyle = arrow_function(dict(weight=5, color = map_dict['FTUs'][struct]['hover_color'], dashArray = '')))),
+                                name = struct, checked = True, id = 'Initial_'+struct)
+                        for struct in map_dict['FTUs']
+                        ] + 
+                        [
+                            dl.Overlay(
+                                dl.LayerGroup(
+                                    dl.GeoJSON(data = spot_dict['geojson'], id = spot_dict['id'], options = dict(color = spot_dict['color']),
+                                        hoverStyle = arrow_function(dict(weight=5, color = spot_dict['hover_color'], dashArray = '')))),
+                                name = 'Spots', checked = False, id = 'Initial_Spots')
                         ]
-                    ),
-                    dbc.CardFooter(
-                        dcc.RadioItems(
-                            id= 'vis-types',
-                            options=[
-                                {'label':html.Div('Heatmap',style={'margin-right':'20px','padding-left':'15px'}),'value':'Heatmap'},
-                                {'label':html.Div('Spots',style={'margin-right':'20px','padding-left':'15px'}),'value':'Spots'},
-                                {'label':html.Div('Functional Tissue Units',style={'margin-right':'20px','padding-left':'15px'}),'value':'FTUs'}
-                            ],
-                            value = 'Heatmap',
-                            inline = True
-                        )
                     )
-                ])
-            ],style={'margin-bottom':'20px'}
-        )
-    ]
-
-    # Contents of tabs
-    thumbnail_select = dbc.Card(
-        children = [
-            dbc.CardHeader("Thumbnail View"),
-            dbc.CardBody([
-                dcc.Graph(
-                    id="thumb-img",
-                    figure=go.Figure(px.imshow(thumb))
-                )]
-            ),
-            html.Div(),
-            dbc.CardFooter([
-                dbc.Row([
-                    dbc.Col([
-                        dbc.Label("ROI Size", html_for="roi-slider"),
-                        dcc.Slider(
-                            id="roi-slider",
-                            min=5,
-                            max=50,
-                            step=5,
-                            value=10
-                        )
-                    ],md=6),
-                    dbc.Col([
-                        dbc.Label("Thumbnail Transparency",html_for='thumb-slider'),
-                        dcc.Slider(
-                            id='thumb-slider',
-                            min=0,
-                            max=100,
-                            step=10,
-                            value=50
-                        )
-                    ],md=6)
-                ])
-            ])
-    ],style={'margin-bottom':'20px'})
+                ], style={'width': '85%', 'height': '80vh', 'margin': "auto", "display": "block"}, id = 'slide-map')
+            )
+        ]),
+        dbc.Row([html.Div(id='current-hover')])
+    ], style = {'marginBottom':'20px'})
 
     # Cell type proportions and cell state distributions
     roi_pie = dbc.Card([
@@ -444,17 +408,17 @@ def gen_layout(cell_types,slides_available,thumb):
         dbc.Container([
             dbc.Row(
                 id = 'descrip-and-instruct',
-                children = description
+                children = [description]
             ),
             html.B(),
             dbc.Row(
                 id = 'slide-select-row',
-                children = slide_select
+                children = [slide_select]
             ),
             html.B(),
             dbc.Row(
                 id="app-content",
-                children=[dbc.Col(wsi_view,md=6),dbc.Col(thumbnail_select,md=6)]
+                children=[wsi_view]
             ),
             html.B(),
             dbc.Row(
@@ -465,6 +429,241 @@ def gen_layout(cell_types,slides_available,thumb):
     ])
 
     return main_layout
+
+
+class WholeSlide:
+    def __init__(self,
+                image_url,
+                slide_name,
+                slide_info_dict,
+                ftu_path,
+                spot_path):
+        
+        self.image_url = image_url
+        self.ftu_path = ftu_path
+        self.spot_path = spot_path
+        self.slide_info_dict = slide_info_dict
+        self.slide_bounds = self.slide_info_dict['bounds']
+        self.slide_name = slide_name
+        self.slide_path = self.slide_info_dict['slide_path']
+
+        self.group_n = 50
+
+        # Processing ftus and spots
+        self.ftus = self.process_ftus()
+        self.spots = self.process_spots()
+
+    def process_spots(self):
+
+        with open(self.spot_path) as f:
+            geojson_polys = geojson.load(f)
+
+        self.geojson_spots = geojson_polys
+
+        # Parsing through geojson spots
+        spot_polys = {}
+
+        spot_groups = []
+        group_count = 0
+        group_bounds = []
+
+        spot_polys['polygons'] = []
+        spot_polys['barcodes'] = []
+        spot_polys['main_counts'] = []
+        spot_polys['cell_states'] = []
+
+        for g in geojson_polys['features']:
+
+            group_count+=1
+            current_spot = shape(g['geometry'])
+            current_bounds = list(current_spot.bounds)
+
+            if not group_bounds == []:
+                new_mins = [np.minimum(current_bounds[j],group_bounds[j]) for j in range(0,2)]
+                new_maxs = [np.maximum(current_bounds[j],group_bounds[j]) for j in range(2,4)]
+
+                group_bounds = new_mins+new_maxs
+            else:
+                group_bounds = current_bounds
+
+            spot_polys['polygons'].append(current_spot)
+            spot_polys['barcodes'].append(g['properties']['label'])
+            spot_polys['main_counts'].append(g['properties']['Main_Cell_Types'])
+            spot_polys['cell_states'].append(g['properties']['Cell_States'])
+
+            if group_count==self.group_n-1:
+                
+                spot_groups.append({
+                    'box':shapely.geometry.box(*group_bounds),
+                    'polygons':spot_polys['polygons'],
+                    'barcodes':spot_polys['barcodes'],
+                    'main_counts':spot_polys['main_counts'],
+                    'cell_states':spot_polys['cell_states']
+                })
+
+                spot_polys['polygons'] = []
+                spot_polys['barcodes'] = []
+                spot_polys['main_counts'] = []
+                spot_polys['cell_states'] = []
+                group_count = 0
+                group_bounds = []
+
+        spot_groups.append({
+            'box':shapely.geometry.box(*group_bounds),
+            'polygons':spot_polys['polygons'],
+            'barcodes':spot_polys['barcodes'],
+            'main_counts':spot_polys['main_counts'],
+            'cell_states':spot_polys['cell_states']
+        })
+
+        return spot_groups
+        
+    def process_ftus(self):
+        # Reading files in geojson format
+        with open(self.ftu_path) as f:
+            geojson_polys = geojson.load(f)
+
+        self.geojson_ftus = geojson_polys
+
+        # Parsing through info stored in geojson file
+        ftu_polys = {}
+        poly_ids = []
+        for f in geojson_polys['features']:
+            try:
+                poly_ids.append(f['properties']['label'])
+            except:
+                continue
+
+        poly_names = np.unique([i.split('_')[0] for i in poly_ids])
+        self.ann_ids = {}
+
+        # The difference here between the spots and the ftus is that the ftu groups will be a dictionary for each ftu
+        # This opens it up to being controlled downstream (e.g. if turning off one FTU)
+        ftu_groups = {}
+
+        for p in poly_names:
+            
+            # Just initializing a dictionary format with empty lists
+            self.ann_ids[p] = []
+
+            poly_idx = [i for i in range(len(poly_ids)) if p in poly_ids[i]]
+            p_features = [geojson_polys[i] for i in poly_idx]
+
+            ftu_polys[p] = {}
+            ftu_polys[p]['polygons'] = []
+            ftu_polys[p]['barcodes'] = []
+            ftu_polys[p]['main_counts'] = []
+            ftu_polys[p]['cell_states'] = []
+
+            ftu_groups[p] = []
+            group_count = 0
+            group_bounds = []
+
+            # Iterating through each polygon in a given FTU
+            for i in p_features:
+
+                group_count+=1
+                current_ftu = shape(i['geometry'])
+                current_bounds = list(current_ftu.bounds)
+
+                # Updating the groups bounding box
+                if not group_bounds == []:
+                    new_mins = [np.minimum(current_bounds[j],group_bounds[j]) for j in range(0,2)]
+                    new_maxs = [np.maximum(current_bounds[j],group_bounds[j]) for j in range(2,4)]
+
+                    group_bounds = new_mins+new_maxs
+                else:
+                    group_bounds = current_bounds
+
+                # Adding info to the dictionary
+                ftu_polys[p]['polygons'].append(current_ftu)
+                ftu_polys[p]['barcodes'].append(i['properties']['label'])
+                ftu_polys[p]['main_counts'].append(i['properties']['Main_Cell_Types'])
+                ftu_polys[p]['cell_states'].append(i['properties']['Cell_States'])
+
+                # Adding group info to the group list for a given ftu
+                if group_count==self.group_n-1:
+                    ftu_groups[p].append({
+                        'box':shapely.geometry.box(*group_bounds),
+                        'polygons':ftu_polys[p]['polygons'],
+                        'barcodes':ftu_polys[p]['barcodes'],
+                        'main_counts':ftu_polys[p]['main_counts'],
+                        'cell_states':ftu_polys[p]['cell_states']
+                        })
+
+                    # resetting back to empty/0
+                    ftu_polys[p]['polygons'] = []
+                    ftu_polys[p]['barcodes'] = []
+                    ftu_polys[p]['main_counts'] = []
+                    ftu_polys[p]['cell_states'] = []
+                    group_count = 0
+                    group_bounds = []
+
+            # Getting the last group which will have length < self.group_n
+            ftu_groups[p].append({
+                'box':shapely.geometry.box(*group_bounds),
+                'polygons':ftu_polys[p]['polygons'],
+                'barcodes':ftu_polys[p]['barcodes'],
+                'main_counts':ftu_polys[p]['main_counts'],
+                'cell_states':ftu_polys[p]['cell_states']
+            })
+
+        return ftu_groups
+
+    def find_intersecting_spots(self,box_poly):
+        
+        # Find intersecting bounding boxes for a given box poly (each box will contain up to self.group_n spots)
+        intersecting_groups = [i for i in range(0,len(self.spots)) if self.spots[i]['box'].intersects(box_poly)]
+
+        # Searching only in intersecting groups for spots that intersect
+        intersect_spots = []
+        intersect_barcodes = []
+        intersect_counts = []
+        intersect_states = []
+        for group_idx in intersecting_groups:
+
+            intersect_idxes = [i for i in range(0,len(self.spots[group_idx]['polygons'])) if self.spots[group_idx]['polygons'][i].intersects(box_poly)]
+            intersect_barcodes.extend([self.spots[group_idx]['barcodes'][i] for i in intersect_idxes])
+            intersect_spots.extend([self.spots[group_idx]['polygons'][i] for i in intersect_idxes])
+            intersect_counts.extend([self.spots[group_idx]['main_counts'][i] for i in intersect_idxes])
+            intersect_states.extend([self.spots[group_idx]['cell_states'][i] for i in intersect_idxes])
+
+        return {'polys':intersect_spots, 'barcodes':intersect_barcodes, 'main_counts':intersect_counts, 'states':intersect_states}    
+
+    def find_intersecting_ftu(self,box_poly,ftu=None):
+
+        intersect_barcodes = []
+        intersect_ftus = []
+        intersect_counts = []
+        intersect_states = []
+
+        if ftu is not None:
+            ftu_list = [ftu]
+        else:
+            ftu_list = self.ann_ids.keys()
+
+        for ann in ftu_list:
+            
+            # Which groups of FTUs intersect with the query box_poly
+            group_intersect = [i for i in range(0,len(self.ftus[ann])) if self.ftus[ann][i]['box'].intersects(box_poly)]
+
+            for g in group_intersect:
+                group_polygons = self.ftus[ann][g]['polygons']
+                group_barcodes = self.ftus[ann][g]['barcodes']
+                group_counts = self.ftus[ann][g]['main_counts']
+                group_states = self.ftus[ann][g]['cell_states']
+
+                # Within group intersections
+                intersect_idxes = [i for i in range(0,len(group_polygons)) if box_poly.intersects(group_polygons[i])]
+
+                intersect_barcodes.extend([group_barcodes[i] for i in intersect_idxes])
+                intersect_ftus.extend([group_polygons[i] for i in intersect_idxes])
+                intersect_counts.extend([group_counts[i] for i in intersect_idxes])
+                intersect_states.extend([group_states[i] for i in intersect_idxes])
+
+        return {'polys':intersect_ftus, 'barcodes':intersect_barcodes, 'main_counts':intersect_counts, 'states':intersect_states}
+
+
 
 
 class Slide:
@@ -490,7 +689,6 @@ class Slide:
         self.thumbnail_path = f'./assets/thumbnail_masks/{self.slide_name}/'
         if not os.path.exists(self.thumbnail_path):
             self.thumbnail_path = f'/home/samborder/mysite/assets/thumbnail_masks/{self.slide_name}/'
-
 
         self.current_cell = ''
         self.current_cell_thumb = Image.fromarray(np.uint8(np.zeros((256,256))))
@@ -626,8 +824,6 @@ class Slide:
             poly,barcode = self.read_regions(spot)
 
             if not poly==None:
-                #spot_polys['polygons'].append(poly)
-                #spot_polys['barcodes'].append(barcode)
                 group_count+=1
 
                 # Get polygon bounds, compare to group current bounds
@@ -869,7 +1065,6 @@ class Slide:
         return vis_overlay
 
 
-
 class SlideHeatVis:
     def __init__(self,
                 app,
@@ -878,11 +1073,12 @@ class SlideHeatVis:
                 cell_graphics_key,
                 asct_b_table,
                 cluster_metadata,
-                slide_list,
+                slide_info_dict,
                 run_type = None):
                 
+        # Setting some app-related things
         self.app = app
-        self.app.title = "WSI Heatmap Viewer"
+        self.app.title = "FUSION"
         self.app.layout = layout
         self.app._favicon = './assets/favicon.ico'
 
@@ -891,11 +1087,10 @@ class SlideHeatVis:
         # clustering related properties
         self.metadata = cluster_metadata
 
-        self.slide_list = slide_list
+        self.slide_list = list(slide_info_dict.keys())
+        self.slide_paths = [slide_info_dict[i]['slide_path'] for i in self.slide_list]
+        self.slide_info_dict = slide_info_dict
         self.wsi = wsi
-        # size here is in the form [width,height]
-        self.wsi_size = self.wsi.dimensions
-        print(f'wsi_size: {self.wsi_size}')
 
         self.cell_graphics_key = json.load(open(cell_graphics_key))
         # Inverting the graphics key to get {'full_name':'abbreviation'}
@@ -903,24 +1098,24 @@ class SlideHeatVis:
         for ct in self.cell_graphics_key:
             self.cell_names_key[self.cell_graphics_key[ct]['full']] = ct
 
+        # Number of main cell types to include in pie-charts
+        self.plot_cell_types_n = 5
+
         # ASCT+B table for cell hierarchy generation
         self.table_df = asct_b_table    
 
-        self.original_thumb = self.wsi.thumb.copy()
-        self.roi_size = 5
-
         # FTU settings
         self.ftus = list(self.wsi.ann_ids.keys())
-        self.ftu_boundary_thickness = 10
-        # Random color generation to start (maybe add the ability to customize these later)
-        self.ftu_color = {
-            ann_name:[np.random.randint(0,255), np.random.randint(0,255), np.random.randint(0,255)]
-            for ann_name in self.ftus
+        self.ftu_colors = {
+            'Glomeruli':'#390191',
+            'Tubules':'#e71d1d',
+            'Arterioles':'#b6d7a8',
+            'Spots':'#dffa00'
         }
-        
+
+        self.current_ftu_layers = ['Glomeruli','Tubules','Arterioles']
+
         # Initializing some parameters
-        self.patch_size = self.roi_size*30
-        self.batch_size = 16
         self.current_cell = 'PT'
         self.current_barcodes = []
 
@@ -936,29 +1131,51 @@ class SlideHeatVis:
 
         # Colormap settings (customize later)
         self.color_map = cm.get_cmap('jet')
+        self.cell_vis_val = 0.5
+        self.ftu_style_handle = assign("""function(feature,context){
+            const {color_key,current_cell,fillOpacity} = context.props.hideout;
+            var cell_value = feature.properties.Main_Cell_Types[current_cell];
+            if (cell_value==0){
+                cell_value = 0.0;
+            }
 
-        # Initial region overlay on thumbnail image
-        initial_coords = [0,0]
-        self.square_roi = self.gen_square(initial_coords)
+            if (cell_value==1){
+                cell_value = 1.0;
+            }
+            const fillColor = color_key[cell_value];
+            var style = {};
+            style.fillColor = fillColor;
+            style.fillOpacity = fillOpacity;
+
+            return style;
+            }
+            """
+        )
 
         self.app.callback(
-            [Output('thumb-img','figure'),Output('wsi-view','figure'),
-            Output('roi-pie','figure'),Output('state-bar','figure'),
-            Output('cell-graphic','src'),Output('cell-hierarchy','elements')],
-            [Input('thumb-img','clickData'), Input('wsi-view','clickData'),
-            Input('cell-drop','value'),Input('vis-slider','value'),
-            Input('roi-slider','value'),Input('vis-types','value'),
-            Input('thumb-slider','value'),Input('slide-select','value')]
-        )(self.put_square)
+            [Output('roi-pie','figure'),Output('state-bar','figure')],
+            [Input('slide-map','zoom'),Input('slide-map','viewport')],
+            State('slide-map','bounds')
+        )(self.update_roi_pie)
+
+        self.app.callback(
+            [Output('cell-graphic','src'),Output('cell-hierarchy','elements'),
+             Output('layer-control','children')],
+             [Input('cell-drop','value'),Input('vis-slider','value')]
+        )(self.update_cell)
 
         self.app.callback(
             Output('state-bar','figure'),
-            Input('roi-pie','clickData')
+            Input('roi-pie','clickData'),
+            prevent_initial_call=True
         )(self.update_state_bar)
 
         self.app.callback(
             Output('current-hover','children'),
-            Input('wsi-view','hoverData')
+            [Input('glom-bounds','hover_feature'),
+             Input('spot-bounds','hover_feature'),
+             Input('tub-bounds','hover_feature'),
+             Input('art-bounds','hover_feature')]
         )(self.get_hover)
 
         self.app.callback(
@@ -969,6 +1186,12 @@ class SlideHeatVis:
             [State('collapse-content','is_open')]
         )(self.view_instructions)
 
+        self.app.callback(
+            [Output('slide-tile','url'), Output('layer-control','children'), Output('slide-map','center'),
+             Output('roi-pie','figure'),Output('state-bar','figure')],
+            Input('slide-select','value')
+        )(self.ingest_wsi)
+        
         self.app.callback(
             [Output('label-p','children'),
             Output('id-p','children'),
@@ -988,14 +1211,13 @@ class SlideHeatVis:
             Input('cluster-graph','selectedData')],
             Output('selected-image','figure')
         )(self.update_selected)
-
        
         # Comment out this line when running on the web
         if self.run_type == 'local':
             self.app.run_server(debug=True,use_reloader=True,port=8000)
 
         elif self.run_type == 'AWS':
-            self.app.run_server(host = '0.0.0.0',debug=True,use_reloader=False,port=8000)
+            self.app.run_server(host = '0.0.0.0',debug=False,use_reloader=False,port=8000)
 
     def view_instructions(self,n,text,is_open):
         if text == 'View Instructions':
@@ -1006,464 +1228,213 @@ class SlideHeatVis:
             return [not is_open,new_text]
         return [is_open,new_text]
     
-    def gen_square(self,center_coords):
+    def update_roi_pie(self,zoom,viewport,bounds):
 
-        # Given a center coordinate (x,y), generate a square of set size for pasting on thumbnail image
-        square_mask = np.zeros((256,256))
-        square_center = [i if i-(self.roi_size/2)>=0 else int(self.roi_size/2) for i in center_coords]
-
-        square_poly = Polygon([
-            (square_center[0]-(self.roi_size/2),square_center[1]+(self.roi_size/2)),
-            (square_center[0]-(self.roi_size/2),square_center[1]-(self.roi_size/2)),
-            (square_center[0]+(self.roi_size/2),square_center[1]-(self.roi_size/2)),
-            (square_center[0]+(self.roi_size/2),square_center[1]+(self.roi_size/2)),
-            (square_center[0]-(self.roi_size/2),square_center[1]+(self.roi_size/2))
-            ])
-
-        x_coords = [int(i[0]) for i in list(square_poly.exterior.coords)]
-        y_coords = [int(i[1]) for i in list(square_poly.exterior.coords)]
-        cc,rr = polygon(y_coords,x_coords,(square_mask.shape[1],square_mask.shape[0]))
-        square_mask[cc,rr] = 1
-        square_mask_3d = np.stack((square_mask,square_mask,square_mask),axis=2)
-        square_mask_3d[:,:,0]*=255
-        square_mask_3d[:,:,1]*=0
-        square_mask_3d[:,:,2]*=0
-
-        return square_mask_3d, square_poly
- 
-    def update_square_location(self, click_coords,thumb_val,cell_val):
-        
-        thumb_val = 255*(thumb_val/100)
-
-        new_square, square_center = self.gen_square(click_coords)
-
-        zero_mask = np.where(np.sum(new_square.copy(),axis=2)==0,0,255)
-        square_mask_4d = np.concatenate((new_square,zero_mask[:,:,None]),axis=-1)
-        rgba_mask = Image.fromarray(np.uint8(square_mask_4d),'RGBA')
-
-        self.current_thumb = self.wsi.thumbnail_overlay(self.cell_names_key[cell_val],thumb_val)
-
-        annotated_thumb = self.current_thumb.copy()
-        annotated_thumb.paste(rgba_mask,mask=rgba_mask)
-
-        return annotated_thumb, square_center
-
-    def gen_patch_centers(self,image):
-        # Creating patch coordinates on wsi view
-        square_dim = int(self.batch_size**0.5)
-        img_max_y, img_max_x = np.shape(image)[0], np.shape(image)[1]
-
-        min_x, max_x = int(self.patch_size/2), img_max_x-int(self.patch_size/2)
-        min_y, max_y = int(self.patch_size/2), img_max_y-int(self.patch_size/2)
-
-        center_x_base = np.linspace(min_x,max_x,num=square_dim).astype(int).tolist()
-        center_y_base = np.linspace(min_y,max_y,num=square_dim).astype(int).tolist()
-
-        center_x_base = [i if i>=0 else 0 for i in center_x_base]
-        center_y_base = [i if i>=0 else 0 for i in center_y_base]
-
-        center_x = []
-        center_y = []
-        for i in range(square_dim):
-            center_x.extend([center_x_base[i]]*square_dim)
-            center_y.extend(center_y_base)
-        
-        batch_centers = list(zip(center_x,center_y))
-
-        return batch_centers
-
-    def make_cell_mask(self,poly_list,cell_vis_mask,wsi_vis_bounds,weight_list,shape_type,ftu_names = None):
-
-        if shape_type == 'ftus':
-            outline_mask_2D = np.zeros(np.shape(cell_vis_mask))
-            outline_mask_3D = np.stack((outline_mask_2D,outline_mask_2D,outline_mask_2D),axis=-1)
-        
-        for p,w in tqdm(zip(poly_list,weight_list),total = len(poly_list)):
-            x_coords = [int(i[0]-wsi_vis_bounds[0]) for i in list(p.exterior.coords)]
-            y_coords = [int(i[1]-wsi_vis_bounds[1]) for i in list(p.exterior.coords)]
-            
-            intermed_mask = np.empty(np.shape(cell_vis_mask))
-            intermed_mask[:] = np.nan
-
-            if shape_type == 'patch':
-                min_x = min(x_coords)
-                max_x = max(x_coords)
-                min_y = min(y_coords)
-                max_y = max(y_coords)
-
-                intermed_mask[min_y:max_y,min_x:max_x] = w
-
-            elif shape_type == 'spots':
-                cc,rr = polygon(y_coords,x_coords,(np.shape(cell_vis_mask)[0],np.shape(cell_vis_mask)[1]))
-                intermed_mask[cc,rr] = w
-
-            elif shape_type == 'ftus':
-                # making shape outline
-                outline = p.buffer(self.ftu_boundary_thickness)
-                outline_x = [int(i[0]-wsi_vis_bounds[0]) for i in list(outline.exterior.coords)]
-                outline_y = [int(i[1]-wsi_vis_bounds[1]) for i in list(outline.exterior.coords)]
-
-                cc_o,rr_o = polygon(outline_y,outline_x,(np.shape(cell_vis_mask)[0],np.shape(cell_vis_mask)[1]))
-
-                # making innerpolygon
-                cc,rr = polygon(y_coords,x_coords,(np.shape(cell_vis_mask)[0],np.shape(cell_vis_mask)[1]))
-                intermed_mask[cc,rr] = w
-
-                outline_mask_3D[cc_o,rr_o,:] = self.ftu_color[ftu_names[poly_list.index(p)].split('_')[0]]
-                outline_mask_3D[cc,rr,:] = [0,0,0]
-
-            intermed_mask[intermed_mask==0] = np.nan
-            cell_vis_mask = np.nanmean(np.stack((cell_vis_mask,intermed_mask),axis=-1),axis=-1)
-
-        if shape_type == 'ftus':
-            return cell_vis_mask, outline_mask_3D
+        # Making a box-poly from the bounds
+        if len(bounds)==2:
+            bounds_box = shapely.geometry.box(bounds[0][1],bounds[0][0],bounds[1][1],bounds[1][0])
         else:
-            return cell_vis_mask
-
-    def gen_cell_vis(self,cell_val,vis_val):
-        
-        # Getting intersecting spot polygons and barcodes
-        intersect_spots, intersect_barcodes = self.wsi.find_intersecting_spots(self.current_projected_poly)
-
-        self.current_spots = intersect_spots
-        self.current_barcodes = intersect_barcodes
-        intersect_counts = self.wsi.counts_data['main_cell_types'][self.wsi.counts_data['main_cell_types'].index.isin(intersect_barcodes)]
-
-        self.current_counts = intersect_counts
-        self.current_intersect_weight = [(spt.intersection(self.current_projected_poly).area)/(spt.area) for spt in self.current_spots]
-
-        # Getting current cell value
-        if not intersect_counts.empty:
-            #intersecting_cell_vals = intersect_counts.loc[cell_val]
-            intersecting_cell_vals = intersect_counts[cell_val]
-
-        # Getting dimensions of proj_poly
-        proj_bounds = list(self.current_projected_poly.bounds)
-        cell_vis_overlay = np.empty(((int(proj_bounds[3]-proj_bounds[1]),int(proj_bounds[2]-proj_bounds[0]))))
-        cell_vis_overlay[:] = np.nan
-
-        if len(intersect_spots)>0:
-            # Making a new patch for each point in self.patch_centers
-
-            if self.current_vis_type == 'Heatmap':
-                patch_list = []
-                weight_list = []
-                for center in self.patch_centers:
-                    patch_poly = shapely.geometry.box(
-                        center[0]-(self.patch_size/2)+proj_bounds[0],
-                        center[1]-(self.patch_size/2)+proj_bounds[1],
-                        center[0]+(self.patch_size/2)+proj_bounds[0],
-                        center[1]+(self.patch_size/2)+proj_bounds[1],
-                        center[0]-(self.patch_size/2)+proj_bounds[0]
-                        )
-                    intersect_weight = []
-                    for spt in intersect_spots:
-                        intersect_weight.append((spt.intersection(patch_poly).area)/(patch_poly.area))
-
-                    mult_cell_vals = (intersecting_cell_vals*intersect_weight).sum()
-
-                    patch_list.append(patch_poly)
-                    weight_list.append(mult_cell_vals)
-
-                cell_mask = self.make_cell_mask(patch_list,cell_vis_overlay,proj_bounds,weight_list,'patch')
-            
-            elif self.current_vis_type == 'Spots':
-
-                cell_mask = self.make_cell_mask(self.current_spots,cell_vis_overlay,proj_bounds,intersecting_cell_vals.tolist(),'spots')
-
-            elif self.current_vis_type == 'FTUs':
-                counts = [i[cell_val] for i in self.current_ftus['main_counts']]
-                cell_mask, outlines = self.make_cell_mask(self.current_ftus['polys'],cell_vis_overlay,proj_bounds,counts,'ftus',self.current_ftus['barcodes'])
-                
-        else:
-            cell_mask = np.zeros((np.shape(cell_vis_overlay)))
-        
-        self.current_cell_distribution = cell_mask
-
-        cell_heatmap = cell_mask.copy()
-        cell_heatmap[np.where(np.isnan(cell_heatmap))] = 0
-
-        color_cell_heatmap = np.uint8(255*self.color_map(np.uint8(255*cell_heatmap))[:,:,0:3])
-        zero_mask = np.where(cell_heatmap==0,0,vis_val)
-        cell_mask_4d = np.concatenate((color_cell_heatmap,zero_mask[:,:,None]),axis=-1)
-        heatmap = Image.fromarray(np.uint8(cell_mask_4d)).convert('RGBA')
-
-        #heatmap = self.current_vis.copy()
-
-        if self.current_vis_type == 'FTUs':
-            
-            try:
-                # overlapping ftu boundaries
-                zero_mask_outlines = np.where(outlines.sum(axis=-1)==0,0,255)
-                outline_mask_4D = np.concatenate((outlines,zero_mask_outlines[:,:,None]),axis=-1)
-                outline_mask_4D = Image.fromarray(np.uint8(outline_mask_4D)).convert('RGBA')
-
-                self.current_ftu_outlines = outline_mask_4D
-            except UnboundLocalError:
-                print('No current FTUs')
-        return heatmap
-
-    def gen_projected_poly(self):
-
-        projected_coords = list(self.current_square_poly.bounds)
-        proj_x = [int(projected_coords[0]*(self.wsi_size[0]/256)),int(projected_coords[2]*(self.wsi_size[0]/256))]
-        proj_y = [int(projected_coords[1]*(self.wsi_size[1]/256)),int(projected_coords[3]*(self.wsi_size[1]/256))]
-
-        projected_poly = Polygon([
-            (proj_x[0],proj_y[1]),
-            (proj_x[0],proj_y[0]),
-            (proj_x[1],proj_y[0]),
-            (proj_x[1],proj_y[1]),
-            (proj_x[0],proj_y[1])
-        ])
-
-        return projected_poly
-
-    def gen_roi_pie(self):
-
-        # Getting current counts and using those to generate a relative pie-chart
-        if isinstance(self.current_counts,pd.DataFrame):
-            combined_counts = self.current_counts.sum(axis=0).to_frame()
-            combined_counts.columns = ['Current ROI']
-            combined_counts = combined_counts.reset_index()
-        else:
-            combined_counts = self.current_counts.to_frame()
-            combined_counts.columns = ['Current ROI']
-            combined_counts = combined_counts.reset_index()
-        
-        combined_counts['Current ROI'] = combined_counts['Current ROI']/combined_counts['Current ROI'].sum()
-        
-        # Currently just doing top 5
-        #combined_counts = combined_counts[combined_counts['Current ROI']>0]
-        combined_counts = combined_counts.sort_values(by=['Current ROI'],ascending=False).iloc[0:5,:]
-
-        cell_types_pie = px.pie(combined_counts,values='Current ROI',names = 'index')
-
-        # By default just getting the top cell type
-        top_cell = combined_counts['index'].tolist()[0]
-
-        # Getting pct_states
-        pct_states = self.wsi.counts_data[top_cell]['pct_states']
-        # Getting spots from columns
-        intersect_states = pct_states[pct_states.columns.intersection(self.current_barcodes)]
-        aggregated_states = intersect_states.sum(axis=1).to_frame()
-        aggregated_states = aggregated_states.reset_index()
-        aggregated_states.columns = ['Cell State','Proportion']
-        aggregated_states['Proportion'] = aggregated_states['Proportion']/aggregated_states['Proportion'].sum()
-
-        state_bar = go.Figure(px.bar(aggregated_states,x='Cell State', y = 'Proportion',title=f'Cell State Proportions for {self.cell_graphics_key[top_cell]["full"]}'))
-
-        return cell_types_pie, state_bar
-
-    def put_square(self,thumb_click_point,wsi_click_point,cell_val,vis_val,roi_size,vis_type,thumb_val,slide_val):
-        
-        vis_val = int((vis_val/100)*255)
-        self.patch_size = roi_size*30
-        self.current_vis_type = vis_type
-        self.current_cell = self.cell_names_key[cell_val]
-
-        if ctx.triggered_id in ['thumb-img','wsi-view','slide-select',None]:
-            
-            if ctx.triggered_id=='slide-select':
-                self.wsi=self.ingest_wsi(slide_val)
-                self.wsi_size = self.wsi.dimensions
-
-            if ctx.triggered_id == 'thumb-img':
-                click_point = [thumb_click_point['points'][0]['x'],thumb_click_point['points'][0]['y']]
-            elif ctx.triggered_id == 'wsi-view':
-                # Getting wsi-view click coordinates
-                wsi_click_coords = [wsi_click_point['points'][0]['x'],wsi_click_point['points'][0]['y']]
-                # Getting wsi-view origin points in thumbnail-view space
-                current_origin = [i-(self.roi_size/2) for i in self.current_click]
-                current_width,current_height = self.current_wsi_image.size
-                wsi_view_dims = [current_width,current_height]
-                click_point = [k+(i*(self.roi_size/j)) for i,j,k in zip(wsi_click_coords,wsi_view_dims,current_origin)]
-
-            elif ctx.triggered_id is None or ctx.triggered_id=='slide-select':
-                click_point = [int(self.roi_size/2),int(self.roi_size/2)]
-
-            new_square_image, square_poly = self.update_square_location(click_point,thumb_val,cell_val)
-
-            self.current_click = click_point
-
-            self.current_square = new_square_image
-            self.current_square_poly = square_poly
-
-            self.current_projected_poly = self.gen_projected_poly()
-
-            self.current_ftus = self.wsi.find_intersecting_ftu(self.current_projected_poly)
-
-            # Timing current image extraction
-            start = timer()
-            self.current_wsi_image = self.wsi.get_image(list(self.current_projected_poly.bounds))
-            end = timer()
-
-            print(f'time to extract slide region: {end-start} seconds')
-
-            self.patch_centers = self.gen_patch_centers(self.current_wsi_image)
-            # Getting cell overlay
-            # Timing for cell visualization
-            start = timer()
-            self.current_overlay = self.gen_cell_vis(self.current_cell,vis_val)
-            end = timer()
-
-            print(f'time to generate cell visualization with {len(self.current_ftus["polys"])} FTUs and {len(self.current_spots)} spots with ROI size: {self.current_projected_poly.area}: {end-start} (seconds)')
-            vis_overlay = self.current_wsi_image.copy()
-            vis_overlay.paste(self.current_overlay,mask=self.current_overlay)
-
-            if self.current_vis_type=='FTUs':
-                vis_overlay.paste(self.current_ftu_outlines,mask=self.current_ftu_outlines)
-            
-            self.current_wsi_view = vis_overlay
-
-            wsi_fig = go.Figure(px.imshow(vis_overlay))
-            square_fig = go.Figure(px.imshow(new_square_image))
-
-        if ctx.triggered_id == 'cell-drop' or ctx.triggered_id == 'vis-types':
-            
-            start = timer()
-            new_overlay = self.gen_cell_vis(self.current_cell,vis_val)
-            end = timer()
-
-            print(f'time to generate cell visualization with {len(self.current_ftus["polys"])} FTUs and {len(self.current_spots)} spots with ROI size: {self.current_projected_poly.area}: {end-start} (seconds)')
-            
-            self.current_square, square_poly = self.update_square_location(self.current_click,thumb_val,cell_val)
-
-            self.current_overlay = new_overlay
-            vis_overlay = self.current_wsi_image.copy()
-            vis_overlay.paste(new_overlay,mask = new_overlay)
-
-            if self.current_vis_type=='FTUs':
-                vis_overlay.paste(self.current_ftu_outlines,mask=self.current_ftu_outlines)
-            
-            self.current_wsi_view = vis_overlay
-
-            wsi_fig = go.Figure(px.imshow(self.current_wsi_view))
-            square_fig = go.Figure(px.imshow(self.current_square))
-
-        if ctx.triggered_id == 'vis-slider':
-
-            vis = np.array(self.current_overlay)[:,:,0:3]
-            zero_mask = np.where(np.sum(vis,axis=2)==0,0,vis_val)
-            vis_mask_4d = np.concatenate((vis,zero_mask[:,:,None]),axis=-1)
-            vis_mask_4d = Image.fromarray(np.uint8(vis_mask_4d)).convert('RGBA')
-
-            self.current_overlay = vis_mask_4d
-            vis_overlay = self.current_wsi_image.copy()
-            vis_overlay.paste(self.current_overlay,mask=self.current_overlay)
-
-            self.current_square, square_poly = self.update_square_location(self.current_click,thumb_val,cell_val)
-
-            if self.current_vis_type=='FTUs':
-                vis_overlay.paste(self.current_ftu_outlines,mask=self.current_ftu_outlines)
-
-            self.current_wsi_view = vis_overlay
-
-            wsi_fig = go.Figure(px.imshow(self.current_wsi_view))
-            square_fig = go.Figure(px.imshow(self.current_square))
-
-        if ctx.triggered_id == 'roi-slider':
-            # Resizing ROI
-            self.roi_size = roi_size
-            new_square_image, square_poly = self.update_square_location(self.current_click,thumb_val,cell_val)
-
-            self.current_square = new_square_image
-            self.current_square_poly = square_poly
-
-            self.current_projected_poly = self.gen_projected_poly()
-            self.current_ftus = self.wsi.find_intersecting_ftu(self.current_projected_poly)
-
-            self.current_wsi_image = self.wsi.get_image(list(self.current_projected_poly.bounds))
-
-            self.patch_centers = self.gen_patch_centers(self.current_wsi_image)
-
-            # Getting cell overlay
-            self.current_overlay = self.gen_cell_vis(self.current_cell,vis_val)
-            vis_overlay = self.current_wsi_image.copy()
-            vis_overlay.paste(self.current_overlay,mask=self.current_overlay)
-
-            if self.current_vis_type=='FTUs':
-                vis_overlay.paste(self.current_ftu_outlines,mask=self.current_ftu_outlines)
-
-            self.current_wsi_view = vis_overlay
-            wsi_fig = go.Figure(px.imshow(self.current_wsi_view))
-            square_fig = go.Figure(px.imshow(self.current_square))
-
-        if ctx.triggered_id == 'thumb-slider':
-            
-            self.current_square, square_poly = self.update_square_location(self.current_click,thumb_val,cell_val)
-
-            wsi_fig = go.Figure(px.imshow(self.current_wsi_view))
-            square_fig = go.Figure(px.imshow(self.current_square))
-
-        wsi_fig.update_layout(
-            margin=dict(l=10,r=10,t=10,b=10),
+            bounds_box = shapely.geometry.box(*bounds)
+
+        # Getting a dictionary containing all the intersecting spots with this current ROI
+        intersecting_ftus = {}
+        if 'Spots' in self.current_ftu_layers:
+            intersecting_spots = self.wsi.find_intersecting_spots(bounds_box)
+            intersecting_ftus['Spots'] = intersecting_spots
+
+        for ftu in self.current_ftu_layers:
+            if not ftu=='Spots':
+                intersecting_ftus[ftu] = self.wsi.find_intersecting_ftu(bounds_box,ftu)
+
+        self.current_ftus = intersecting_ftus
+        # Now we have main cell types, cell states, by ftu
+
+        included_ftus = list(intersecting_ftus.keys())
+        included_ftus = [i for i in included_ftus if len(intersecting_ftus[i]['polys'])>0]
+        # Making subplots for each 
+        combined_pie = make_subplots(
+            rows = len(included_ftus), cols = 1,
+            subplot_titles = included_ftus,
+            specs = [[{'type':'domain'}]]*len(included_ftus)
         )
 
-        square_fig.update_layout(
-            margin=dict(l=10,r=10,t=10,b=10)
-        )
-        
-        cell_types_pie, state_barchart = self.gen_roi_pie()
+        # Iterating through intersecting_ftus and getting combined main cell proportions
+        figs_to_include = []
+        for f in included_ftus:
+            
+            counts_data = pd.DataFrame(intersecting_ftus[f]['main_counts']).sum(axis=0).to_frame()
+            counts_data.columns = [f]
 
-        # Loading the cell-graphic and hierarchy image
-        cell_graphic = self.cell_graphics_key[self.current_cell]['graphic']
-        #cell_hierarchy = self.cell_graphics_key[self.current_cell]['hierarchy']
-        cell_hierarchy = self.gen_cyto()
+            # Normalizing to sum to 1
+            counts_data[f] = counts_data[f]/counts_data[f].sum()
+            # Only getting the top-5
+            counts_data = counts_data.sort_values(by=f,ascending=False).iloc[0:self.plot_cell_types_n,:]
+            counts_data = counts_data.reset_index()
+            f_pie = px.pie(counts_data,values=f,names='index')
+            figs_to_include.append(f_pie)
 
-        if cell_graphic == "":
-            cell_graphic = './assets/cell_graphics/default_cell_graphic.png'
-        if cell_hierarchy == "":
-            cell_hierarchy = './assets/cell_graphics/default_cell_hierarchy.png'
+        for i, figure in enumerate(figs_to_include):
+            if 'data' in figure:
+                for trace in range(len(figure['data'])):
+                    combined_pie.append_trace(figure['data'][trace],row=i+1,col=1)
+            else:
+                combined_pie.append_trace(figure,row=i+1,col=1)
 
-        return square_fig, wsi_fig, cell_types_pie, state_barchart, cell_graphic, cell_hierarchy
+        # Picking cell + ftu for cell state proportions plot
+        top_cell = counts_data['index'].tolist()[0]
+        pct_states = pd.DataFrame([i[top_cell] for i in intersecting_ftus[f]['states']]).sum(axis=0).to_frame()
+        pct_states = pct_states.reset_index()
+        pct_states.columns = ['Cell State','Proportion']
+        pct_states['Proportion'] = pct_states['Proportion']/pct_states['Proportion'].sum()
+
+        state_bar = go.Figure(px.bar(pct_states,x='Cell State', y = 'Proportion', title = f'Cell State Proportions for {self.cell_graphics_key[top_cell]["full"]} in {f}'))
+
+        return combined_pie, state_bar
 
     def update_state_bar(self,cell_click):
         
         if not cell_click is None:
             self.pie_cell = cell_click['points'][0]['label']
+            self.pie_ftu = list(self.current_ftus.keys())[cell_click['points'][0]['curveNumber']]
+
         else:
             self.pie_cell = self.current_cell
+            self.pie_ftu = list(self.current_ftus.keys())[-1]
 
-        # Getting pct_states
-        pct_states = self.wsi.counts_data[self.pie_cell]['pct_states']
-        # Getting spots from columns
-        intersect_states = pct_states[pct_states.columns.intersection(self.current_barcodes)]
-        aggregated_states = intersect_states.sum(axis=1).to_frame()
-        aggregated_states = aggregated_states.reset_index()
-        aggregated_states.columns = ['Cell State','Proportion']
-        aggregated_states['Proportion'] = aggregated_states['Proportion']/aggregated_states['Proportion'].sum()
+        pct_states = pd.DataFrame([i[self.pie_cell] for i in self.current_ftus[self.pie_ftu]['states']]).sum(axis=0).to_frame()
+        pct_states = pct_states.reset_index()
+        pct_states.columns = ['Cell State', 'Proportion']
+        pct_states['Proportion'] = pct_states['Proportion']/pct_states['Proportion'].sum()
 
-        state_bar = go.Figure(px.bar(aggregated_states,x='Cell State', y = 'Proportion',title=f'Cell State Proportions for {self.cell_graphics_key[self.pie_cell]["full"]}'))
+        state_bar = go.Figure(px.bar(pct_states,x='Cell State', y = 'Proportion', title = f'Cell State Proportions for {self.cell_graphics_key[self.pie_cell]["full"]} in {self.pie_ftu}'))
+
 
         return state_bar
     
-    def get_hover(self,wsi_hover):
+    def update_hex_color_key(self):
+
+        # Iterate through all structures (and spots) in current wsi,
+        # concatenate all of their proportions of specific cell types together
+        # scale it with self.color_map (make sure to multiply by 255 after)
+        # convert uint8 RGB colors to hex
+        # create look-up table for original value --> hex color
+        # add that as get_color() function in style dict (fillColor) along with fillOpacity
+        raw_values_list = []
+        id_list = []
+        # iterating through current ftus
+        for f in self.wsi.ftus:
+            for g in self.wsi.ftus[f]:
+                # get main counts for this ftu
+                ftu_counts = pd.DataFrame(g['main_counts'])[self.current_cell].tolist()
+                raw_values_list.extend(ftu_counts)
+
+        for g in self.wsi.spots:
+            spot_counts = pd.DataFrame(g['main_counts'])[self.current_cell].tolist()
+            raw_values_list.extend(spot_counts)
+
+        raw_values_list = np.unique(raw_values_list)
+        # Converting to RGB
+        rgb_values = np.uint8(255*self.color_map(np.uint8(255*raw_values_list)))[:,0:3]
+        hex_list = []
+        for row in range(rgb_values.shape[0]):
+            hex_list.append('#'+"%02x%02x%02x" % (rgb_values[row,0],rgb_values[row,1],rgb_values[row,2]))
+
+        self.hex_color_key = {i:j for i,j in zip(raw_values_list,hex_list)}
+
+    def update_cell(self,cell_val,vis_val):
+        
+        # Updating current cell prop
+        self.current_cell = self.cell_names_key[cell_val]
+        self.cell_vis_val = vis_val/100
+
+        self.update_hex_color_key()
+
+        vis_val = vis_val/100
+
+        # Changing fill and fill-opacity properties for structures and adding that as a property
+
+        # Modifying ftu and spot geojson to add fill color and opacity
+        for f in self.wsi.geojson_ftus['features']:
+            
+            cell_pct = f['properties']['Main_Cell_Types'][self.current_cell]
+            hex_color = self.hex_color_key[cell_pct]
+            f['properties']['fillColor'] = hex_color
+            f['properties']['fillOpacity'] = vis_val
+
+        map_dict = {
+            'url':self.wsi.image_url,
+            'FTUs':{
+                'Glomeruli': {
+                    'geojson':{'type':'FeatureCollection', 'features': [i for i in self.wsi.geojson_ftus['features'] if i['properties']['structure']=='Glomeruli']},
+                    'id': 'glom-bounds',
+                    'color': '#390191',
+                    'hover_color':'#666'
+                },
+                'Tubules': {
+                    'geojson':{'type':'FeatureCollection', 'features': [i for i in self.wsi.geojson_ftus['features'] if i['properties']['structure']=='Tubules']},
+                    'id':'tub-bounds',
+                    'color': '#e71d1d',
+                    'hover_color': '#ff0b0a'
+                },
+                'Arterioles': {
+                    'geojson':{'type':'FeatureCollection', 'features': [i for i in self.wsi.geojson_ftus['features'] if i['properties']['structure']=='Arterioles']},
+                    'id':'art-bounds',
+                    'color': '#b6d7a8',
+                    'hover_color': '#50f207'
+                }
+            }
+        }
+
+        spot_dict = {
+            'geojson':self.wsi.geojson_spots,
+            'id': 'spot-bounds',
+            'color': '#dffa00',
+            'hover_color':'#9caf00'
+        }
+
+        new_children = [
+            dl.Overlay(
+                dl.LayerGroup(
+                    dl.GeoJSON(data = map_dict['FTUs'][struct]['geojson'], id = map_dict['FTUs'][struct]['id'], options = dict(style=self.ftu_style_handle),
+                            hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = vis_val),
+                            hoverStyle = arrow_function(dict(weight=5, color = map_dict['FTUs'][struct]['hover_color'], dashArray = '')))),
+                    name = struct, checked = True, id = self.wsi.slide_info_dict['key_name']+'_'+struct)
+            for struct in map_dict['FTUs']
+            ]
+        
+        new_children += [
+            dl.Overlay(
+                dl.LayerGroup(
+                    dl.GeoJSON(data = spot_dict['geojson'], id = spot_dict['id'], options = dict(style = self.ftu_style_handle),
+                            hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = vis_val),
+                            hoverStyle = arrow_function(dict(weight=5, color = spot_dict['hover_color'], dashArray = '')))),
+                    name = 'Spots', checked = False, id = self.wsi.slide_info_dict['key_name']+'_Spots')
+            ]
+    
+        # Loading the cell-graphic and hierarchy image
+        cell_graphic = self.cell_graphics_key[self.current_cell]['graphic']
+        cell_hierarchy = self.gen_cyto()
+
+        return cell_graphic, cell_hierarchy, new_children
+
+    def get_hover(self,glom_hover,spot_hover,tub_hover,art_hover):
 
         hover_text = ''
-        if not wsi_hover is None:
-            hover_point = [wsi_hover['points'][0]['x'],wsi_hover['points'][0]['y']]
-        else:
-            hover_point = [0,0]
+        if 'glom-bounds.hover_feature' in ctx.triggered_prop_ids:
+            if not glom_hover is None:
+                hover_text = f'Glomerulus, {self.current_cell}: {round(glom_hover["properties"]["Main_Cell_Types"][self.current_cell],3)}'
+        
+        if 'spot-bounds.hover_feature' in ctx.triggered_prop_ids:
+            if not spot_hover is None:
+                hover_text = f'Spot, {self.current_cell}: {round(spot_hover["properties"]["Main_Cell_Types"][self.current_cell],3)}'
 
-        # Getting hover data relative to wsi coordinates
-        square_bounds = list(self.current_projected_poly.bounds)
-        if self.current_vis_type in ['Spots','FTUs']:
-            wsi_point = Point(hover_point[0]+square_bounds[0],hover_point[1]+square_bounds[1])
+        if 'tub-bounds.hover_feature' in ctx.triggered_prop_ids:
+            if not tub_hover is None:
+                hover_text = f'Tubule, {self.current_cell}: {round(tub_hover["properties"]["Main_Cell_Types"][self.current_cell],3)}'
 
-            if self.current_vis_type == 'Spots':
-                spot_idx = np.argwhere([i.intersects(wsi_point) for i in self.current_spots])[0]
-                barcode = self.current_barcodes[spot_idx[0]]
-                counts = self.current_counts.loc[barcode][self.current_cell]
-                hover_text += f'{self.cell_graphics_key[self.current_cell]["full"]}: {str(round(counts,3))}'
-            
-            if self.current_vis_type == 'FTUs':
-                ftu_idx = np.argwhere([i.intersects(wsi_point) for i in self.current_ftus['polys']])[0]
-                cell_val = self.current_ftus['main_counts'][ftu_idx[0]][self.current_cell]
-                hover_text += f'{self.cell_graphics_key[self.current_cell]["full"]}: {str(round(cell_val,3))}'
-        else:
-            # For heatmap visualization
-            hover_text += f'{self.cell_graphics_key[self.current_cell]["full"]}: {str(round(self.current_cell_distribution[hover_point[1],hover_point[0]]))}'
+        if 'art-bounds.hover_feature' in ctx.triggered_prop_ids:
+            if not art_hover is None:
+                hover_text = f'Arteriole, {self.current_cell}: {round(art_hover["properties"]["Main_Cell_Types"][self.current_cell],3)}'
 
         return hover_text
         
@@ -1559,71 +1530,149 @@ class SlideHeatVis:
 
     def get_cyto_data(self,clicked):
 
-        if 'ST' in clicked['id']:
-            table_data = self.table_df.dropna(subset=['CT/1/ABBR'])
-            table_data = table_data[table_data['CT/1/ABBR'].str.match(clicked['label'])]
+        if not clicked is None:
+            if 'ST' in clicked['id']:
+                table_data = self.table_df.dropna(subset=['CT/1/ABBR'])
+                table_data = table_data[table_data['CT/1/ABBR'].str.match(clicked['label'])]
 
-            label = clicked['label']
-            try:
-                id = table_data['CT/1/ID'].tolist()[0]
-                # Modifying base url to make this link to UBERON
-                base_url = self.node_cols['Cell Types']['base_url']
-                new_url = base_url+id.replace('CL:','')
+                label = clicked['label']
+                try:
+                    id = table_data['CT/1/ID'].tolist()[0]
+                    # Modifying base url to make this link to UBERON
+                    base_url = self.node_cols['Cell Types']['base_url']
+                    new_url = base_url+id.replace('CL:','')
 
-            except IndexError:
-                print(table_data['CT/1/ID'].tolist())
-                id = ''
-            
-            try:
-                notes = table_data['CT/1/NOTES'].tolist()[0]
-            except:
-                print(table_data['CT/1/NOTES'])
-                notes = ''
+                except IndexError:
+                    print(table_data['CT/1/ID'].tolist())
+                    id = ''
+                
+                try:
+                    notes = table_data['CT/1/NOTES'].tolist()[0]
+                except:
+                    print(table_data['CT/1/NOTES'])
+                    notes = ''
 
-        elif 'Main_Cell' not in clicked['id']:
-            
-            table_data = self.table_df.dropna(subset=[clicked['id']])
-            table_data = table_data[table_data[clicked['id']].str.match(clicked['label'])]
+            elif 'Main_Cell' not in clicked['id']:
+                
+                table_data = self.table_df.dropna(subset=[clicked['id']])
+                table_data = table_data[table_data[clicked['id']].str.match(clicked['label'])]
 
-            base_label = '/'.join(clicked['id'].split('/')[0:-1])
-            label = table_data[base_label+'/LABEL'].tolist()[0]
+                base_label = '/'.join(clicked['id'].split('/')[0:-1])
+                label = table_data[base_label+'/LABEL'].tolist()[0]
 
-            id = table_data[base_label+'/ID'].tolist()[0]
-            
-            if self.node_cols['Anatomical Structure']['abbrev'] in clicked['id']:
-                base_url = self.node_cols['Anatomical Structure']['base_url']
+                id = table_data[base_label+'/ID'].tolist()[0]
+                
+                if self.node_cols['Anatomical Structure']['abbrev'] in clicked['id']:
+                    base_url = self.node_cols['Anatomical Structure']['base_url']
 
-                new_url = base_url+id.replace('UBERON:','')
+                    new_url = base_url+id.replace('UBERON:','')
+                else:
+                    base_url = self.node_cols['Genes']['base_url']
+
+                    new_url = base_url+id.replace('HGNC:','')
+
+                try:
+                    notes = table_data[base_label+'/NOTES'].tolist()[0]
+                except KeyError:
+                    notes = ''
+
             else:
-                base_url = self.node_cols['Genes']['base_url']
-
-                new_url = base_url+id.replace('HGNC:','')
-
-            try:
-                notes = table_data[base_label+'/NOTES'].tolist()[0]
-            except KeyError:
+                label = ''
+                id = ''
                 notes = ''
-
+                new_url = ''
         else:
             label = ''
             id = ''
             notes = ''
             new_url = ''
 
-
         return f'Label: {label}', dcc.Link(f'ID: {id}', href = new_url), f'Notes: {notes}'
     
     def ingest_wsi(self,slide_name):
 
-        old_paths = [self.wsi.slide_path, self.wsi.spot_path,self.wsi.counts_path,
-                    self.wsi.ftu_path,self.wsi.ann_ids,self.wsi.counts_def_df]
+        new_key_name = self.slide_info_dict[slide_name]['key_name']
+        old_key_name = self.wsi.slide_info_dict['key_name']
+        new_url = self.wsi.image_url.replace(old_key_name,new_key_name)
+
+        old_ftu_path = self.wsi.ftu_path
+        old_spot_path = self.wsi.spot_path
+
+        new_ftu_path = old_ftu_path.replace(self.wsi.slide_name.replace('.svs',''),slide_name.replace('.svs',''))
+        new_spot_path = old_spot_path.replace(self.wsi.slide_name.replace('.svs',''),slide_name.replace('.svs',''))
+        new_slide = WholeSlide(new_url,slide_name,self.slide_info_dict[slide_name],new_ftu_path,new_spot_path)
+
+        self.wsi = new_slide
+
+        self.update_hex_color_key()
+
+        # Getting map_dict and spot_dict for overlays
+        with open(new_ftu_path) as f:
+            geojson_polys = geojson.load(f)
+
+        with open(new_spot_path) as f:
+            spot_geojson_polys = geojson.load(f)
+
+        map_dict = {
+            'url':new_slide.image_url,
+            'FTUs':{
+                'Glomeruli': {
+                    'geojson':{'type':'FeatureCollection', 'features': [i for i in geojson_polys['features'] if i['properties']['structure']=='Glomeruli']},
+                    'id': 'glom-bounds',
+                    'color': '#390191',
+                    'hover_color':'#666'
+                },
+                'Tubules': {
+                    'geojson':{'type':'FeatureCollection', 'features': [i for i in geojson_polys['features'] if i['properties']['structure']=='Tubules']},
+                    'id':'tub-bounds',
+                    'color': '#e71d1d',
+                    'hover_color': '#ff0b0a'
+                },
+                'Arterioles': {
+                    'geojson':{'type':'FeatureCollection', 'features': [i for i in geojson_polys['features'] if i['properties']['structure']=='Arterioles']},
+                    'id':'art-bounds',
+                    'color': '#b6d7a8',
+                    'hover_color': '#50f207'
+                }
+            }
+        }
+
+        spot_dict = {
+            'geojson':spot_geojson_polys,
+            'id': 'spot-bounds',
+            'color': '#dffa00',
+            'hover_color':'#9caf00'
+        }
+
+        new_children = [
+            dl.Overlay(
+                dl.LayerGroup(
+                    dl.GeoJSON(data = map_dict['FTUs'][struct]['geojson'], id = map_dict['FTUs'][struct]['id'], options = dict(style = self.ftu_style_handle),
+                                hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = self.cell_vis_val),
+                                hoverStyle = arrow_function(dict(weight=5, color = map_dict['FTUs'][struct]['hover_color'], dashArray = '')))),
+                    name = struct, checked = True, id = self.wsi.slide_info_dict['key_name']+'_'+struct)
+            for struct in map_dict['FTUs']
+            ]
         
-        wsi_ext = slide_name.split('.')[-1]
-        new_paths = [i.replace(self.wsi.slide_name,slide_name.replace('.'+wsi_ext,'')) if type(i)==str else i for i in old_paths]
+        new_children += [
+            dl.Overlay(
+                dl.LayerGroup(
+                    dl.GeoJSON(data = spot_dict['geojson'], id = spot_dict['id'], options = dict(style = self.ftu_style_handle),
+                            hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = self.cell_vis_val),
+                            hoverStyle = arrow_function(dict(weight=5, color = spot_dict['hover_color'], dashArray = '')))),
+                    name = 'Spots', checked = False, id = self.wsi.slide_info_dict['key_name']+'_Spots')
+            ]
+    
+        
+        new_url = self.wsi.image_url
 
-        new_slide = Slide(*new_paths)
+        # Getting new pie chart and state bar chart
+        new_pie_chart, new_state_bar = self.update_roi_pie([],[],self.wsi.slide_bounds)
 
-        return new_slide
+        center_point = [(self.wsi.slide_bounds[1]+self.wsi.slide_bounds[3])/2,(self.wsi.slide_bounds[0]+self.wsi.slide_bounds[2])/2]
+
+
+        return new_url, new_children, center_point, new_pie_chart, new_state_bar
 
     def update_graph(self,ftu,plot,label):
         
@@ -1676,7 +1725,7 @@ class SlideHeatVis:
                 width = int(sample_info['Max_x_coord'].tolist()[idx])-min_x
                 height = int(sample_info['Max_y_coord'].tolist()[idx])-min_y      
 
-            slide_path = [i for i in self.slide_list if s in i]
+            slide_path = [i for i in self.slide_paths if s in i]
 
             slide_path = slide_path[0]
             #print(slide_path)
@@ -1718,12 +1767,33 @@ class SlideHeatVis:
     
 
 
-
-
 #if __name__ == '__main__':
 def app(*args):
 
     run_type = 'local'
+
+    slide_info_dict = {
+        'XY01_IU-21-015F.svs':{
+            'key_name':'XY01IU21015F',
+            'bounds':[-121.4887696318595,0.0,-121.29151201587271,0.19456360965996605],
+            'wsi_dims':[22012,21566]
+        },
+        'XY02_IU-21-016F.svs':{
+            'key_name':'XY02IU21016F',
+            'bounds':[-121.48876728121257,0.0,-121.29107290809065,0.18546976820936942],
+            'wsi_dims':[22061,20558]
+        },
+        'XY03_IU-21-019F.svs':{
+            'key_name':'XY03IU21019F',
+            'bounds':[-121.48876962947176,0.0,-121.29142240206029,0.19455461087467554],
+            'wsi_dims':[22022,21565]
+        },
+        'XY04_IU-21-020F.svs':{
+            'key_name':'XY04IU21020F',
+            'bounds':[-121.48876962708414,0.0,-121.29123421301975,0.19454563737274247],
+            'wsi_dims':[22043,21564]
+        }
+    }
 
     try:
         run_type = os.environ['RUNTYPE']
@@ -1742,11 +1812,9 @@ def app(*args):
         slide_names = [i.split('/')[-1] for i in available_slides]
         slide_name = slide_names[0]
 
-        slide_path = base_dir+'FFPE/'+slide_name
-        spot_path = base_dir+'FFPE/Spot_Coordinates_large/'+slide_name.replace('.svs','_Large.xml')
-        counts_path = base_dir+'counts_data/FFPE/CellTypeFractions_SpotLevel/V10S15-103_'+slide_name.replace('.svs','_cellfract.csv')
-        counts_def_path = base_dir+'counts_data/Cell_SubTypes_Grouped.csv'
-        ftu_path = base_dir+'SpotNet_NonEssential_Files/CellAnnotations_GeoJSON/'+slide_name.replace('.svs','.geojson')
+        slide_url = 'http://localhost:5000/rgb/'+slide_info_dict[slide_name]["key_name"]+'/{z}/{x}/{y}.png?r=B04&r_range=[46,168]&g=B03&g_range=[46,168]&b=B02&b_range=[46,168]&'
+        ftu_path = base_dir+'SpotNet_NonEssential_Files/CellAnnotations_GeoJSON/'+slide_name.replace('.svs','_scaled.geojson')
+        spot_path = base_dir+'SpotNet_NonEssential_Files/CellAnnotations_GeoJSON/'+slide_name.replace('.svs','_Spots_scaled.geojson')
         cell_graphics_path = 'graphic_reference.json'
         asct_b_path = 'Kidney_v1.2 - Kidney_v1.2.csv'
 
@@ -1756,28 +1824,27 @@ def app(*args):
         # For test deployment
         if run_type == 'web':
             base_dir = os.getcwd()+'/mysite/'
-
             slide_info_path = base_dir+'/slide_info/'
         else:
             base_dir = os.getcwd()
-
             slide_info_path = base_dir+'assets/slide_info/'
 
         available_slides = glob(slide_info_path+'*.svs')
         slide_names = [i.split('/')[-1] for i in available_slides]
         slide_name = slide_names[0]
 
-        slide_path = slide_info_path+slide_name
-        spot_path = slide_path.replace('.svs','_Large.xml')
-        counts_path = slide_info_path+'V10S15-103_'+slide_name.replace('.svs','_cellfract.csv')
-        counts_def_path = slide_path.replace(slide_name,'Cell_SubTypes_Grouped.csv')
-        ftu_path = slide_path.replace('.svs','.geojson')
+        slide_url = 'http://0.0.0.0:5000/rgb/'+slide_info_dict[slide_name]['key_name']+'/{z}/{x}/{y}.png?r=B04&r_range=[46,168]&g=B03&g_range=[46,168]&b=B02&b_range=[46,168]&'
+        spot_path = slide_info_path+slide_name.replace('.svs','_Spots_scaled.geojson')
+        ftu_path = slide_info_path+slide_name.replace('.svs','_scaled.geojson')
         cell_graphics_path = base_dir+'graphic_reference.json'
         asct_b_path = base_dir+'Kidney_v1.2 - Kidney_v1.2.csv'
 
         metadata_path = base_dir+'assets/cluster_metadata/'
 
-    ann_ids = None
+    
+    # Adding slide paths to the slide_info_dict
+    for slide,path in zip(slide_names,available_slides):
+        slide_info_dict[slide]['slide_path'] = path
 
     # Reading dictionary containing paths for specific cell types
     cell_graphics_key = cell_graphics_path
@@ -1796,14 +1863,57 @@ def app(*args):
     # Adding ASCT+B table to files
     asct_b_table = pd.read_csv(asct_b_path,skiprows=list(range(10)))
 
-    wsi = Slide(slide_path,spot_path,counts_path,ftu_path,ann_ids,counts_def_path)
+    #wsi = Slide(slide_path,spot_path,counts_path,ftu_path,ann_ids,counts_def_path)
+    wsi = WholeSlide(slide_url,slide_name,slide_info_dict[slide_name],ftu_path,spot_path)
 
     external_stylesheets = [dbc.themes.LUX]
 
-    main_layout = gen_layout(cell_names,slide_names,wsi.thumb)
+    # Calculating center point for initial layout
+    current_slide_bounds = slide_info_dict[slide_name]['bounds']
+    center_point = [(current_slide_bounds[1]+current_slide_bounds[3])/2,(current_slide_bounds[0]+current_slide_bounds[2])/2]
+    
+    # Getting map_dict and spot_dict for overlays
+    with open(ftu_path) as f:
+        geojson_polys = geojson.load(f)
+
+    with open(spot_path) as f:
+        spot_geojson_polys = geojson.load(f)
+
+    map_dict = {
+        'url':wsi.image_url,
+        'FTUs':{
+            'Glomeruli': {
+                'geojson':{'type':'FeatureCollection', 'features': [i for i in geojson_polys['features'] if i['properties']['structure']=='Glomeruli']},
+                'id': 'glom-bounds',
+                'color': '#390191',
+                'hover_color':'#666'
+            },
+            'Tubules': {
+                'geojson':{'type':'FeatureCollection', 'features': [i for i in geojson_polys['features'] if i['properties']['structure']=='Tubules']},
+                'id':'tub-bounds',
+                'color': '#e71d1d',
+                'hover_color': '#ff0b0a'
+            },
+            'Arterioles': {
+                'geojson':{'type':'FeatureCollection', 'features': [i for i in geojson_polys['features'] if i['properties']['structure']=='Arterioles']},
+                'id':'art-bounds',
+                'color': '#b6d7a8',
+                'hover_color': '#50f207'
+            }
+        }
+    }
+
+    spot_dict = {
+        'geojson':spot_geojson_polys,
+        'id': 'spot-bounds',
+        'color': '#dffa00',
+        'hover_color':'#9caf00'
+    }
+
+    main_layout = gen_layout(cell_names,slide_names,center_point,map_dict,spot_dict)
 
     main_app = DashProxy(__name__,external_stylesheets=external_stylesheets,transforms = [MultiplexerTransform()])
-    vis_app = SlideHeatVis(main_app,main_layout,wsi,cell_graphics_key,asct_b_table,metadata, available_slides,run_type)
+    vis_app = SlideHeatVis(main_app,main_layout,wsi,cell_graphics_key,asct_b_table,metadata, slide_info_dict,run_type)
 
     if run_type=='web':
         return vis_app.app
