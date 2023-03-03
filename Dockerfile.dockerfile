@@ -9,18 +9,12 @@ RUN apt-get update && \
     openslide-tools \
     python3-openslide
 
-ENV RUNTYPE=='AWS'
+ENV RUNTYPE='AWS'
+ENV CPLUS_INCLUDE_PATH=/usr/include/gdal
+ENV C_INCLUDE_PATH=/usr/include/gdal
 
 COPY . ./
 RUN python3 -m pip install --upgrade pip
-
-# Terracotta setup
-WORKDIR /assets/slide_info/
-RUN git clone https://github.com/DHI-GRAS/terracotta.git
-RUN python3 -m pip install -r ./requirements.txt --no-cache-dir
-EXPOSE 5000
-
-RUN terracotta serve -r full_optimized_tifs/{slide}_{band}.tif --port 5000
 
 # Running the app
 WORKDIR /
