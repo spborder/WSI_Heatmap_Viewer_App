@@ -1,5 +1,5 @@
 # Dockerfile for FUSION: Functional Unit State Identification and Navigation with WSI
-FROM python:3.8
+FROM python:3.6
 
 LABEL maintainer="Sam Border CMI Lab <samuel.border@medicine.ufl.edu>"
 
