@@ -667,7 +667,7 @@ class WholeSlide:
 
 
 
-
+"""
 class Slide:
     def __init__(self,
                 slide_path,
@@ -1065,7 +1065,7 @@ class Slide:
 
 
         return vis_overlay
-
+"""
 
 class SlideHeatVis:
     def __init__(self,

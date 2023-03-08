@@ -199,7 +199,7 @@ def main():
         current_metas = current_meta_path
 
     # slide_id used for separating data for each slide to add to the slide-specific annotations file
-    add_meta_path = '/mnt/c/Users/Sam/Desktop/HIVE/SpotNet_NonEssential_Files/WSI_Heatmap_Viewer_App/assets/cluster_metadata/FFPE_SpTx_Tubules.json'
+    add_meta_path = '/mnt/c/Users/Sam/Desktop/HIVE/SpotNet_NonEssential_Files/WSI_Heatmap_Viewer_App/assets/cluster_metadata/FFPE_SpTx_Glomeruli.json'
     slide_id = 'image_id'
     poly_type = 'box'
 
