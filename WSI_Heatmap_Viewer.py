@@ -28,6 +28,7 @@ from shapely.geometry import Polygon, Point, shape
 from skimage.draw import polygon
 from skimage.transform import resize
 import geojson
+import random
 
 import plotly.express as px
 from plotly.subplots import make_subplots
@@ -173,6 +174,7 @@ def gen_layout(cell_types,slides_available, center_point, map_dict, spot_dict):
             html.Div(
                 dl.Map(center = center_point, zoom = 12, minZoom=11, children = [
                     dl.TileLayer(url = map_dict['url'], id = 'slide-tile'),
+                    dl.LayerGroup(id='mini-label'),
                     dl.LayersControl(id = 'layer-control', children = 
                         [
                             dl.Overlay(
@@ -296,7 +298,7 @@ def gen_layout(cell_types,slides_available, center_point, map_dict, spot_dict):
                 html.Div(
                     dcc.Graph(id='cluster-graph',figure=go.Figure())
                 )
-            ]),
+            ],md=4),
             dbc.Col([
                 dcc.Loading(
                     id = 'loading-image',
@@ -305,7 +307,7 @@ def gen_layout(cell_types,slides_available, center_point, map_dict, spot_dict):
                     ]
                 ),
                 html.Div(id='selected-image-info')
-            ]),
+            ],md=4),
             dbc.Col([
                 dbc.Card(
                     id= 'plot-options',
@@ -353,7 +355,7 @@ def gen_layout(cell_types,slides_available, center_point, map_dict, spot_dict):
                         ])
                     ]
                 )
-            ])
+            ],md=4)
         ],align='center')
     ])
 
@@ -1114,6 +1116,9 @@ class SlideHeatVis:
         }
 
         self.current_ftu_layers = ['Glomeruli','Tubules','Arterioles']
+        self.pie_ftu = self.current_ftu_layers[-1]
+
+        self.current_chart_coords = [0,0]
 
         # Initializing some parameters
         self.current_cell = 'PT'
@@ -1133,7 +1138,7 @@ class SlideHeatVis:
         self.color_map = cm.get_cmap('jet')
         self.cell_vis_val = 0.5
         self.ftu_style_handle = assign("""function(feature,context){
-            const {color_key,current_cell,fillOpacity} = context.props.hideout;
+            const {color_key,current_cell,fillOpacity,ftu_colors} = context.props.hideout;
             var cell_value = feature.properties.Main_Cell_Types[current_cell];
             if (cell_value==0){
                 cell_value = 0.0;
@@ -1165,7 +1170,7 @@ class SlideHeatVis:
         )(self.update_cell)
 
         self.app.callback(
-            Output('state-bar','figure'),
+            [Output('state-bar','figure'),Output('roi-pie','figure')],
             Input('roi-pie','clickData'),
             prevent_initial_call=True
         )(self.update_state_bar)
@@ -1175,28 +1180,41 @@ class SlideHeatVis:
             [Input('glom-bounds','hover_feature'),
              Input('spot-bounds','hover_feature'),
              Input('tub-bounds','hover_feature'),
-             Input('art-bounds','hover_feature')]
+             Input('art-bounds','hover_feature')],
+             prevent_initial_call=True
         )(self.get_hover)
+
+        self.app.callback(
+            Output('mini-label','children'),
+            [Input('glom-bounds','click_feature'),
+            Input('spot-bounds','click_feature'),
+            Input('tub-bounds','click_feature'),
+            Input('art-bounds','click_feature')],
+            prevent_initial_call=True
+        )(self.get_click)
 
         self.app.callback(
             [Output('collapse-content','is_open'),
             Output('collapse-descrip','children')],
             [Input('collapse-descrip','n_clicks'),
             Input('collapse-descrip','children')],
-            [State('collapse-content','is_open')]
+            [State('collapse-content','is_open')],
+            prevent_initial_call=True
         )(self.view_instructions)
 
         self.app.callback(
             [Output('slide-tile','url'), Output('layer-control','children'), Output('slide-map','center'),
              Output('roi-pie','figure'),Output('state-bar','figure')],
-            Input('slide-select','value')
+            Input('slide-select','value'),
+            prevent_initial_call=True
         )(self.ingest_wsi)
         
         self.app.callback(
             [Output('label-p','children'),
             Output('id-p','children'),
             Output('notes-p','children')],
-            Input('cell-hierarchy','tapNodeData')
+            Input('cell-hierarchy','tapNodeData'),
+            prevent_initial_call=True
         )(self.get_cyto_data)
 
         self.app.callback(
@@ -1209,7 +1227,8 @@ class SlideHeatVis:
         self.app.callback(
             [Input('cluster-graph','clickData'),
             Input('cluster-graph','selectedData')],
-            Output('selected-image','figure')
+            Output('selected-image','figure'),
+            prevent_initial_call=True
         )(self.update_selected)
        
         # Comment out this line when running on the web
@@ -1252,11 +1271,21 @@ class SlideHeatVis:
         included_ftus = list(intersecting_ftus.keys())
         included_ftus = [i for i in included_ftus if len(intersecting_ftus[i]['polys'])>0]
         # Making subplots for each 
-        combined_pie = make_subplots(
-            rows = len(included_ftus), cols = 1,
-            subplot_titles = included_ftus,
-            specs = [[{'type':'domain'}]]*len(included_ftus)
-        )
+        spec_list = [[{'type':'domain','rowspan':len(included_ftus)-1}]]
+        if len(included_ftus)>1:
+            spec_list[0].extend([{'type':'domain'}])
+        if len(included_ftus)>2:
+            for inc_f in range(0,len(included_ftus)-2):
+                spec_list.append([None,{'type':'domain'}])
+        
+        if len(included_ftus)>1:
+            combined_pie = make_subplots(
+                rows = len(included_ftus)-1, cols = 2,
+                subplot_titles = included_ftus,
+                specs = spec_list
+            )
+        else:
+            combined_pie = go.Figure()
 
         # Iterating through intersecting_ftus and getting combined main cell proportions
         figs_to_include = []
@@ -1273,12 +1302,19 @@ class SlideHeatVis:
             f_pie = px.pie(counts_data,values=f,names='index')
             figs_to_include.append(f_pie)
 
-        for i, figure in enumerate(figs_to_include):
-            if 'data' in figure:
-                for trace in range(len(figure['data'])):
-                    combined_pie.append_trace(figure['data'][trace],row=i+1,col=1)
-            else:
-                combined_pie.append_trace(figure,row=i+1,col=1)
+        if 'data' in figs_to_include[0]:
+            for trace in range(len(figs_to_include[0]['data'])):
+                combined_pie.append_trace(figs_to_include[0]['data'][trace],row=1,col=1)
+        else:
+            combined_pie.append_trace(figs_to_include[0],row=1,col=1)
+        
+        if len(included_ftus)>1:
+            for i,figure in enumerate(figs_to_include[1:]):
+                if 'data' in figure:
+                    for trace in range(len(figure['data'])):
+                        combined_pie.append_trace(figure['data'][trace],row=i+1,col=2)
+                else:
+                    combined_pie.append_trace(figure,row=i+1,col=2)
 
         # Picking cell + ftu for cell state proportions plot
         top_cell = counts_data['index'].tolist()[0]
@@ -1291,15 +1327,84 @@ class SlideHeatVis:
 
         return combined_pie, state_bar
 
+    def make_new_pie_subplots(self,big_ftu):
+
+        # Making the new focus-ftu the first in the list (probably another way to do this)
+        included_ftus = list(self.current_ftus.keys())
+        included_ftus = [i for i in included_ftus if len(self.current_ftus[i]['polys'])>0 and not i==big_ftu]
+        included_ftus = [big_ftu]+included_ftus
+        self.current_ftu_layers = [i for i in self.current_ftu_layers if not i == big_ftu]
+        self.current_ftu_layers = [big_ftu]+self.current_ftu_layers
+
+        # Re-generating pie-chart subplots with new focus-ftu
+        spec_list = [[{'type':'domain','rowspan':len(included_ftus)-1}]]
+        if len(included_ftus)>1:
+            spec_list[0].extend([{'type':'domain'}])
+        if len(included_ftus)>2:
+            for inc_f in range(0,len(included_ftus)-2):
+                spec_list.append([None,{'type':'domain'}])
+        
+        if len(included_ftus)>1:
+            combined_pie = make_subplots(
+                rows = len(included_ftus)-1, cols = 2,
+                subplot_titles = included_ftus,
+                specs = spec_list
+            )
+        else:
+            combined_pie = go.Figure()
+
+        # Iterating through intersecting_ftus and getting combined main cell proportions
+        figs_to_include = []
+        for f in included_ftus:
+            
+            counts_data = pd.DataFrame(self.current_ftus[f]['main_counts']).sum(axis=0).to_frame()
+            counts_data.columns = [f]
+
+            # Normalizing to sum to 1
+            counts_data[f] = counts_data[f]/counts_data[f].sum()
+            # Only getting the top-5
+            counts_data = counts_data.sort_values(by=f,ascending=False).iloc[0:self.plot_cell_types_n,:]
+            counts_data = counts_data.reset_index()
+            f_pie = px.pie(counts_data,values=f,names='index')
+            figs_to_include.append(f_pie)
+
+        
+        if 'data' in figs_to_include[0]:
+            for trace in range(len(figs_to_include[0]['data'])):
+                combined_pie.append_trace(figs_to_include[0]['data'][trace],row=1,col=1)
+        else:
+            combined_pie.append_trace(figs_to_include[0],row=1,col=1)
+        
+        if len(included_ftus)>1:
+            for i,figure in enumerate(figs_to_include[1:]):
+                if 'data' in figure:
+                    for trace in range(len(figure['data'])):
+                        combined_pie.append_trace(figure['data'][trace],row=i+1,col=2)
+                else:
+                    combined_pie.append_trace(figure,row=i+1,col=2)
+
+        return combined_pie
+
     def update_state_bar(self,cell_click):
         
         if not cell_click is None:
             self.pie_cell = cell_click['points'][0]['label']
-            self.pie_ftu = list(self.current_ftus.keys())[cell_click['points'][0]['curveNumber']]
+
+            if not self.current_ftu_layers[cell_click['points'][0]['curveNumber']] == self.pie_ftu:
+                # Re-generating pie-charts with the new FTU as the left big pie-chart
+                self.pie_ftu = self.current_ftu_layers[cell_click['points'][0]['curveNumber']]
+                new_pie_chart = self.make_new_pie_subplots(self.pie_ftu)
+                self.current_pie_chart = new_pie_chart
+
+            else:
+                new_pie_chart = self.current_pie_chart
 
         else:
             self.pie_cell = self.current_cell
-            self.pie_ftu = list(self.current_ftus.keys())[-1]
+            self.pie_ftu = self.current_ftu_layers[-1]
+
+            new_pie_chart = self.make_new_pie_subplots(self.pie_ftu)
+            self.current_pie_chart = new_pie_chart
 
         pct_states = pd.DataFrame([i[self.pie_cell] for i in self.current_ftus[self.pie_ftu]['states']]).sum(axis=0).to_frame()
         pct_states = pct_states.reset_index()
@@ -1308,8 +1413,7 @@ class SlideHeatVis:
 
         state_bar = go.Figure(px.bar(pct_states,x='Cell State', y = 'Proportion', title = f'Cell State Proportions for {self.cell_graphics_key[self.pie_cell]["full"]} in {self.pie_ftu}'))
 
-
-        return state_bar
+        return state_bar, new_pie_chart
     
     def update_hex_color_key(self):
 
@@ -1396,7 +1500,7 @@ class SlideHeatVis:
             dl.Overlay(
                 dl.LayerGroup(
                     dl.GeoJSON(data = map_dict['FTUs'][struct]['geojson'], id = map_dict['FTUs'][struct]['id'], options = dict(style=self.ftu_style_handle),
-                            hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = vis_val),
+                            hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = vis_val, ftu_colors=self.ftu_colors),
                             hoverStyle = arrow_function(dict(weight=5, color = map_dict['FTUs'][struct]['hover_color'], dashArray = '')))),
                     name = struct, checked = True, id = self.wsi.slide_info_dict['key_name']+'_'+struct)
             for struct in map_dict['FTUs']
@@ -1406,7 +1510,7 @@ class SlideHeatVis:
             dl.Overlay(
                 dl.LayerGroup(
                     dl.GeoJSON(data = spot_dict['geojson'], id = spot_dict['id'], options = dict(style = self.ftu_style_handle),
-                            hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = vis_val),
+                            hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = vis_val, ftu_colors= self.ftu_colors),
                             hoverStyle = arrow_function(dict(weight=5, color = spot_dict['hover_color'], dashArray = '')))),
                     name = 'Spots', checked = False, id = self.wsi.slide_info_dict['key_name']+'_Spots')
             ]
@@ -1437,7 +1541,97 @@ class SlideHeatVis:
                 hover_text = f'Arteriole, {self.current_cell}: {round(art_hover["properties"]["Main_Cell_Types"][self.current_cell],3)}'
 
         return hover_text
-        
+    
+    def get_click(self,glom_click,spot_click,tub_click,art_click):
+
+        if 'glom-bounds.click_feature' in ctx.triggered_prop_ids:
+            if not glom_click is None:
+                chart_coords = np.mean(np.squeeze(glom_click['geometry']['coordinates']),axis=0)
+                chart_dict_data = glom_click['properties']['Main_Cell_Types']
+                chart_labels = list(chart_dict_data.keys())
+                chart_data = [chart_dict_data[j] for j in chart_labels]
+
+                if not all([i==j for i,j in zip(chart_coords,self.current_chart_coords)]):
+                    self.current_chart_coords = chart_coords
+
+                    mini_pie_chart = dl.Minichart(
+                        data = chart_data, 
+                        labels = chart_labels, 
+                        lat=chart_coords[1],
+                        lon=chart_coords[0],
+                        height=100,
+                        width=100,
+                        labelMinSize=2,
+                        type='pie',id=f'glom_pie_click{random.randint(0,1000)}')
+
+                    return [mini_pie_chart]
+
+        if 'tub-bounds.click_feature' in ctx.triggered_prop_ids:
+            if not tub_click is None:
+                chart_coords = np.mean(np.squeeze(tub_click['geometry']['coordinates']),axis=0)
+                chart_dict_data = tub_click['properties']['Main_Cell_Types']
+                chart_labels = list(chart_dict_data.keys())
+                chart_data = [chart_dict_data[j] for j in chart_labels]
+
+                if not all([i==j for i,j in zip(chart_coords,self.current_chart_coords)]):
+                    self.current_chart_coords = chart_coords
+
+                    mini_pie_chart = dl.Minichart(
+                        data = chart_data, 
+                        labels = chart_labels, 
+                        lat=chart_coords[1],
+                        lon=chart_coords[0],
+                        height=100,
+                        width=100,
+                        labelMinSize=2,
+                        type='pie',id=f'tub_pie_click{random.randint(0,1000)}')
+
+                    return [mini_pie_chart]
+
+        if 'spot-bounds.click_feature' in ctx.triggered_prop_ids:
+            if not spot_click is None:
+                chart_coords = np.mean(np.squeeze(spot_click['geometry']['coordinates']),axis=0)
+                chart_dict_data = spot_click['properties']['Main_Cell_Types']
+                chart_labels = list(chart_dict_data.keys())
+                chart_data = [chart_dict_data[j] for j in chart_labels]
+
+                if not all([i==j for i,j in zip(chart_coords,self.current_chart_coords)]):
+                    self.current_chart_coords = chart_coords
+
+                    mini_pie_chart = dl.Minichart(
+                        data = chart_data, 
+                        labels = chart_labels, 
+                        lat=chart_coords[1],
+                        lon=chart_coords[0],
+                        height=100,
+                        width=100,
+                        labelMinSize=2,
+                        type='pie',id=f'spot_pie_click{random.randint(0,1000)}')
+
+                    return [mini_pie_chart]
+
+        if 'art-bounds.click_feature' in ctx.triggered_prop_ids:
+            if not art_click is None:
+                chart_coords = np.mean(np.squeeze(art_click['geometry']['coordinates']),axis=0)
+                chart_dict_data = art_click['properties']['Main_Cell_Types']
+                chart_labels = list(chart_dict_data.keys())
+                chart_data = [chart_dict_data[j] for j in chart_labels]
+
+                if not all([i==j for i,j in zip(chart_coords,self.current_chart_coords)]):
+                    self.current_chart_coords = chart_coords
+
+                    mini_pie_chart = dl.Minichart(
+                        data = chart_data, 
+                        labels = chart_labels, 
+                        lat=chart_coords[1],
+                        lon=chart_coords[0],
+                        height=100,
+                        width=100,
+                        labelMinSize=2,
+                        type='pie',id=f'art_pie_click{random.randint(0,1000)}')
+
+                    return [mini_pie_chart]
+             
     def gen_cyto(self):
 
         cyto_elements = []
@@ -1800,10 +1994,11 @@ def app(*args):
     except:
         print(f'Using {run_type} run type')
 
+    """
     print(f'Using {run_type} run type')
     print(f'Current working directory is: {os.getcwd()}')
     print(f'Contents of current working directory is: {os.listdir(os.getcwd())}')
-
+    """
     if run_type == 'local':
         # For local testing
         base_dir = '/mnt/c/Users/Sam/Desktop/HIVE/'
