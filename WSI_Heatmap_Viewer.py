@@ -1551,7 +1551,6 @@ class SlideHeatVis:
         selected_image.update_layout(
             margin=dict(l=0,r=0,t=0,b=0)
         )
-        #image_metadata = json.dumps(sample_info.to_dict())
 
         return selected_image
     
@@ -1609,7 +1608,8 @@ def app(*args):
         cell_graphics_path = 'graphic_reference.json'
         asct_b_path = 'Kidney_v1.2 - Kidney_v1.2.csv'
 
-        metadata_path = './assets/cluster_metadata/'
+        #metadata_path = './assets/cluster_metadata/'
+        metadata_paths = [base_dir+'SpotNet_NonEssential_Files/CellAnnotations_GeoJSON/'+s.replace('.svs','_scaled.geojson') for s in list(slide_info_dict.keys())]
 
     elif run_type == 'web' or run_type=='AWS':
         # For test deployment
@@ -1630,8 +1630,8 @@ def app(*args):
         cell_graphics_path = base_dir+'graphic_reference.json'
         asct_b_path = base_dir+'Kidney_v1.2 - Kidney_v1.2.csv'
 
-        metadata_path = base_dir+'assets/cluster_metadata/'
-
+        #metadata_path = base_dir+'assets/cluster_metadata/'
+        metadata_paths = [slide_info_path+s.replace('.svs','_scaled.geojson') for s in list(slide_info_dict.keys())]
     
     # Adding slide paths to the slide_info_dict
     for slide,path in zip(slide_names,available_slides):
@@ -1645,11 +1645,23 @@ def app(*args):
         cell_names.append(cell_graphics_json[ct]['full'])
 
     # Reading in clustering metadata (old way, separate json files for each structure)
-    glom_metadata = json.load(open(metadata_path+'FFPE_SpTx_Glomeruli.json'))
-    tub_metadata = json.load(open(metadata_path+'FFPE_SpTx_Tubules.json'))
+    #glom_metadata = json.load(open(metadata_path+'FFPE_SpTx_Glomeruli.json'))
+    #tub_metadata = json.load(open(metadata_path+'FFPE_SpTx_Tubules.json'))
 
-    metadata = pd.DataFrame.from_dict(glom_metadata,orient='index')
-    metadata = pd.concat([metadata,pd.DataFrame.from_dict(tub_metadata,orient='index')],axis=0,ignore_index=True)
+    #metadata = pd.DataFrame.from_dict(glom_metadata,orient='index')
+    #metadata = pd.concat([metadata,pd.DataFrame.from_dict(tub_metadata,orient='index')],axis=0,ignore_index=True)
+
+    # Compiling info for clustering metadata
+    metadata = []
+    for m in metadata_paths:
+        # Reading geojson file
+        with open(m) as f:
+            current_geojson = geojson.load(f)
+        
+        # Iterating through features and adding properties to metadata
+        for f in current_geojson['features']:
+            metadata.append(f['properties'])
+            
 
 
     # Adding ASCT+B table to files
@@ -1670,6 +1682,8 @@ def app(*args):
 
     with open(spot_path) as f:
         spot_geojson_polys = geojson.load(f)
+
+
 
     map_dict = {
         'url':wsi.image_url,
