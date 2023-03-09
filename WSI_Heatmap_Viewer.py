@@ -449,6 +449,7 @@ class WholeSlide:
         self.slide_name = slide_name
         self.slide_path = self.slide_info_dict['slide_path']
 
+        # Efficiency test (grouping together ftus and spots into boxes with 50 structures in each)
         self.group_n = 50
 
         # Processing ftus and spots
@@ -665,407 +666,6 @@ class WholeSlide:
 
         return {'polys':intersect_ftus, 'barcodes':intersect_barcodes, 'main_counts':intersect_counts, 'states':intersect_states}
 
-
-
-"""
-class Slide:
-    def __init__(self,
-                slide_path,
-                spot_path,
-                counts_path,
-                ftu_path,
-                ann_ids,
-                counts_def_df):
-
-        self.slide_path = slide_path
-        self.spot_path = spot_path
-        self.counts_path = counts_path
-        self.counts_def_df = counts_def_df
-        self.ftu_path = ftu_path
-        self.ann_ids = ann_ids
-
-        self.slide_name = self.slide_path.split(os.sep)[-1]
-        slide_extension = self.slide_name.split('.')[-1]
-        self.slide_name = self.slide_name.replace('.'+slide_extension,'')
-
-        self.thumbnail_path = f'./assets/thumbnail_masks/{self.slide_name}/'
-        if not os.path.exists(self.thumbnail_path):
-            self.thumbnail_path = f'/home/samborder/mysite/assets/thumbnail_masks/{self.slide_name}/'
-
-        self.current_cell = ''
-        self.current_cell_thumb = Image.fromarray(np.uint8(np.zeros((256,256))))
-
-        # Grouping together a set number of shapely objects and generating bounding boxes to reduce intersection calls
-        self.group_n = 50
-
-        if not self.counts_def_df is None:
-            if type(self.counts_def_df)==str:
-                self.counts_def_df = pd.read_csv(self.counts_def_df)
-
-        self.counts = pd.read_csv(self.counts_path,index_col=0,engine='python')
-        self.cell_types = list(self.counts.index)
-
-        if not self.counts_def_df is None:
-            self.counts_data = self.compress_counts()
-            self.cell_types = self.counts_data['main_cell_types'].columns.tolist()
-
-        self.slide = self.read_wsi()
-        self.dimensions = self.slide.dimensions
-        self.spots = self.read_spots()
-
-        # Reading FTUs from ftu_path if provided
-        if not self.ftu_path is None:
-            self.ftus = self.read_ftus()
-
-        self.thumb = self.get_thumbnail()
-        print(f'Got thumbnail')
-        if not os.path.exists(self.slide_path.replace('.svs','_thumb.png')):
-            self.thumb.save(self.slide_path.replace('.svs','_thumb.png'))
-
-    def compress_counts(self):
-        
-        sub_types_list = self.counts_def_df['Sub_Types'].tolist()
-        cell_states_list = self.counts_def_df['Cell_States'].tolist()
-
-        main_types_list = self.counts_def_df['Main_Types'].tolist()
-        
-        # Normalize to sum to 1
-        norm_counts = self.counts/self.counts.sum(axis=0)
-
-        slide_compressed_counts = {}
-        slide_compressed_counts['main_cell_types'] = pd.DataFrame()
-        
-        for m in range(0,len(main_types_list)):
-            main_name = main_types_list[m]
-            sub_list = sub_types_list[m].split('.')
-            state_list = cell_states_list[m].split('.')
-
-            slide_compressed_counts[main_name] = {}
-
-            sub_df = norm_counts.loc[norm_counts.index.isin(sub_list)]
-            sub_sum_df = sub_df.sum(axis=0)
-            if slide_compressed_counts['main_cell_types'].empty:
-                slide_compressed_counts['main_cell_types'] = pd.DataFrame(data = sub_sum_df.values,columns = [main_name],index=list(sub_sum_df.index))
-            else:
-                new_df = pd.DataFrame(data = sub_sum_df.values, columns = [main_name],index=list(sub_sum_df.index))
-                slide_compressed_counts['main_cell_types'] = pd.concat([slide_compressed_counts['main_cell_types'],new_df],axis=1)
-
-            pct_count_df = (sub_df/sub_sum_df).fillna(0)
-            slide_compressed_counts[main_name]['pct_subtypes'] = pct_count_df
-
-            state_pct_df = pct_count_df.copy()
-
-            # Setting the index of state percentages
-            #if self.use_all_states:
-            state_pct_df.index = [state_list[i] for i in range(len(state_list)) if sub_list[i] in list(state_pct_df.index)]
-
-            # Combining states with the same name
-            state_pct_df = state_pct_df.groupby(level=0).sum()
-
-            # Re-normalizing (if certain cell states are removed) (replacing inf/nan with zero (for structures that have a sum of zero across included cell states))
-            state_pct_df = (state_pct_df/state_pct_df.sum(axis=0)).fillna(0)
-
-            # Sorting index so each one is consistent
-            state_pct_df = state_pct_df.sort_index()
-
-            slide_compressed_counts[main_name]['pct_states'] = state_pct_df
-
-        # Adding in rows for missing main cell types
-        if slide_compressed_counts['main_cell_types'].shape[1]<len(main_types_list):
-            add_column_names = [i for i in main_types_list if i not in slide_compressed_counts['main_cell_types'].columns]
-            for add in add_column_names:
-                added_df = pd.DataFrame({add:[0]*slide_compressed_counts['main_cell_types'].shape[0]},index=list(slide_compressed_counts['main_cell_types'].index))
-                slide_compressed_counts['main_cell_types'] = pd.concat([slide_compressed_counts['main_cell_types'],added_df],axis=1)
-
-        slide_compressed_counts['main_cell_types'] = slide_compressed_counts['main_cell_types'].sort_index(axis=1)
-    
-        return slide_compressed_counts
-
-    def read_wsi(self):
-        return openslide.OpenSlide(self.slide_path)
-
-    def get_thumbnail(self):
-
-        if not os.path.exists(self.slide_path.replace('.svs','_thumb.png')):
-            # Returns thumbnail PIL Image for a given slide with size (512,512)
-            return self.slide.get_thumbnail((256,256))
-        else:
-            return Image.open(self.slide_path.replace('.svs','_thumb.png'))
-
-    def read_xml(self,filepath):
-        return ET.parse(filepath)
-
-    def read_regions(self,region):
-        Vertices = region.findall('./Vertices/Vertex')
-
-        coords = []
-        for Vertex in Vertices:
-            coords.append((np.float32(Vertex.attrib['X']),np.float32(Vertex.attrib['Y'])))
-
-        if len(coords)>2:
-            reg_poly = Polygon(coords)
-            barcode = region.attrib['Text']
-
-            return reg_poly,barcode
-        else:
-            return None, None
-
-    def read_spots(self):
-
-        spot_polys = {}
-        spot_polys['polygons'] = []
-        spot_polys['barcodes'] = []
-
-        spot_groups = []
-        group_count = 0
-        group_box = []
-
-        spots = self.read_xml(self.spot_path).getroot().findall('Annotation[@Id="1"]/Regions/Region')
-        for spot in tqdm(spots,desc='Parsing spots'):
-
-            poly,barcode = self.read_regions(spot)
-
-            if not poly==None:
-                group_count+=1
-
-                # Get polygon bounds, compare to group current bounds
-                poly_bounds = list(poly.bounds)
-                if not group_box == []:
-                    # minimums
-                    new_mins = [np.minimum(group_box[i],poly_bounds[i]) for i in range(0,2)]
-                    new_maxs = [np.maximum(group_box[i],poly_bounds[i]) for i in range(2,4)]
-
-                    group_box = new_mins+new_maxs
-                else:
-                    group_box = poly_bounds
-
-                spot_polys['polygons'].append(poly)
-                spot_polys['barcodes'].append(barcode)
-
-                # Adding collected data to spot_groups list
-                if group_count==self.group_n-1:
-                    spot_groups.append({'box':shapely.geometry.box(*group_box),'polygons':spot_polys['polygons'],'barcodes':spot_polys['barcodes']})
-                    spot_polys['polygons'] = []
-                    spot_polys['barcodes'] = []
-                    group_count = 0
-                    group_box = []
-
-        # Adding the remaining info to the spot_groups list (last one will have length<group count)
-        spot_groups.append({'box':shapely.geometry.box(*group_box),'polygons':spot_polys['polygons'],'barcodes':spot_polys['barcodes']})
-
-        return spot_groups
-
-    def get_image(self,poly_box):
-        
-        # Returns PIL RGBA image from patch coordinates
-        image = self.slide.read_region((int(poly_box[0]),int(poly_box[1])),0,(int(poly_box[2]-poly_box[0]),int(poly_box[3]-poly_box[1])))
-
-        return image
-
-    def find_intersecting_spots(self,box_poly):
-        
-        # Find intersecting bounding boxes for a given box poly (each box will contain up to self.group_n spots)
-        intersecting_groups = [i for i in range(0,len(self.spots)) if self.spots[i]['box'].intersects(box_poly)]
-
-        # Searching only in intersecting groups for spots that intersect
-        intersect_spots = []
-        intersect_barcodes = []
-        for group_idx in intersecting_groups:
-
-            intersect_idxes = [i for i in range(0,len(self.spots[group_idx]['polygons'])) if self.spots[group_idx]['polygons'][i].intersects(box_poly)]
-            intersect_barcodes.extend([self.spots[group_idx]['barcodes'][i] for i in intersect_idxes])
-            intersect_spots.extend([self.spots[group_idx]['polygons'][i] for i in intersect_idxes])
-
-
-        #intersect_idxes = [i for i in range(0,len(self.spots['polygons'])) if self.spots['polygons'][i].intersects(box_poly)]
-
-        #intersect_barcodes = [self.spots['barcodes'][i] for i in intersect_idxes]
-        #intersect_spots = [self.spots['polygons'][i] for i in intersect_idxes]
-
-        return intersect_spots, intersect_barcodes
-
-    def read_ftus(self):
-
-        if '.xml' in self.ftu_path:
-
-            ftu_polys = {}
-            ftu_tree = self.read_xml(self.ftu_path).getroot()
-            
-            for ann,id in self.ann_ids.items():
-                
-                ftu_polys[ann] = {}
-                ftu_polys[ann]['polygons'] = []
-                ftu_polys[ann]['barcodes'] = []
-
-                ftus = ftu_tree.findall('Annotation[@Id="'+str(id)+'"]/Regions/Region')
-                for idx,struct in tqdm(enumerate(ftus),desc = f'Parsing FTUs: {ann}'):
-
-                    poly, barcode = self.read_regions(struct)
-
-                    if not poly==None:
-                        
-                        ftu_polys[ann]['polygons'].append(poly)
-                        ftu_polys[ann]['barcodes'].append(f'{ann}_{idx}')
-
-        elif '.geojson' in self.ftu_path:
-
-            # Reading files in geojson format
-            with open(self.ftu_path) as f:
-                geojson_polys = geojson.load(f)
-
-            # Parsing through info stored in geojson file
-            ftu_polys = {}
-            poly_ids = []
-            for f in geojson_polys:
-                poly_ids.append(f['properties']['label'])
-
-            poly_names = np.unique([i.split('_')[0] for i in poly_ids])
-            self.ann_ids = {}
-
-            # The difference here between the spots and the ftus is that the ftu groups will be a dictionary for each ftu
-            # This opens it up to being controlled downstream (e.g. if turning off one FTU)
-            ftu_groups = {}
-
-            for p in poly_names:
-                
-                # Just initializing a dictionary format with empty lists
-                self.ann_ids[p] = []
-
-                poly_idx = [i for i in range(len(poly_ids)) if p in poly_ids[i]]
-                p_features = [geojson_polys[i] for i in poly_idx]
-
-                ftu_polys[p] = {}
-                ftu_polys[p]['polygons'] = []
-                ftu_polys[p]['barcodes'] = []
-                ftu_polys[p]['main_counts'] = []
-                ftu_polys[p]['cell_states'] = []
-
-                ftu_groups[p] = []
-                group_count = 0
-                group_bounds = []
-
-                # Iterating through each polygon in a given FTU
-                for i in p_features:
-
-                    group_count+=1
-                    current_ftu = shape(i['geometry'])
-                    current_bounds = list(current_ftu.bounds)
-
-                    # Updating the groups bounding box
-                    if not group_bounds == []:
-                        new_mins = [np.minimum(current_bounds[j],group_bounds[j]) for j in range(0,2)]
-                        new_maxs = [np.maximum(current_bounds[j],group_bounds[j]) for j in range(2,4)]
-
-                        group_bounds = new_mins+new_maxs
-                    else:
-                        group_bounds = current_bounds
-
-                    # Adding info to the dictionary
-                    ftu_polys[p]['polygons'].append(current_ftu)
-                    ftu_polys[p]['barcodes'].append(i['properties']['label'])
-                    ftu_polys[p]['main_counts'].append(i['properties']['Main_Cell_Types'])
-                    ftu_polys[p]['cell_states'].append(i['properties']['Cell_States'])
-
-                    # Adding group info to the group list for a given ftu
-                    if group_count==self.group_n-1:
-                        ftu_groups[p].append({
-                            'box':shapely.geometry.box(*group_bounds),
-                            'polygons':ftu_polys[p]['polygons'],
-                            'barcodes':ftu_polys[p]['barcodes'],
-                            'main_counts':ftu_polys[p]['main_counts'],
-                            'cell_states':ftu_polys[p]['cell_states']
-                            })
-
-                        # resetting back to empty/0
-                        ftu_polys[p]['polygons'] = []
-                        ftu_polys[p]['barcodes'] = []
-                        ftu_polys[p]['main_counts'] = []
-                        ftu_polys[p]['cell_states'] = []
-                        group_count = 0
-                        group_bounds = []
-
-                # Getting the last group which will have length < self.group_n
-                ftu_groups[p].append({
-                    'box':shapely.geometry.box(*group_bounds),
-                    'polygons':ftu_polys[p]['polygons'],
-                    'barcodes':ftu_polys[p]['barcodes'],
-                    'main_counts':ftu_polys[p]['main_counts'],
-                    'cell_states':ftu_polys[p]['cell_states']
-                })
-
-                #ftu_polys[p]['polygons'] = [shape(i['geometry']) for i in p_features]
-                #ftu_polys[p]['barcodes'] = [i['properties']['label'] for i in p_features]
-                #ftu_polys[p]['main_counts'] = [i['properties']['Main_Cell_Types'] for i in p_features]
-                #ftu_polys[p]['cell_states'] = [i['properties']['Cell_States'] for i in p_features]
-
-        return ftu_groups
-
-    def find_intersecting_ftu(self,box_poly):
-
-        intersect_barcodes = []
-        intersect_ftus = []
-        intersect_counts = []
-        intersect_states = []
-        for ann in list(self.ann_ids.keys()):
-
-            # Which groups of FTUs intersect with the query box_poly
-            group_intersect = [i for i in range(0,len(self.ftus[ann])) if self.ftus[ann][i]['box'].intersects(box_poly)]
-
-            for g in group_intersect:
-                group_polygons = self.ftus[ann][g]['polygons']
-                group_barcodes = self.ftus[ann][g]['barcodes']
-                group_counts = self.ftus[ann][g]['main_counts']
-                group_states = self.ftus[ann][g]['cell_states']
-
-                # Within group intersections
-                intersect_idxes = [i for i in range(0,len(group_polygons)) if group_polygons[i].intersects(box_poly)]
-
-                intersect_barcodes.extend([group_barcodes[i] for i in intersect_idxes])
-                intersect_ftus.extend([group_polygons[i] for i in intersect_idxes])
-                intersect_counts.extend([group_counts[i] for i in intersect_idxes])
-                intersect_states.extend([group_states[i] for i in intersect_idxes])
-                    
-
-            #intersect_idxes= [i for i in range(0,len(self.ftus[ann]['polygons'])) if self.ftus[ann]['polygons'][i].intersects(box_poly)]
-            #intersect_barcodes.extend([self.ftus[ann]['barcodes'][i] for i in intersect_idxes])
-            #intersect_ftus.extend([self.ftus[ann]['polygons'][i] for i in intersect_idxes])
-            #intersect_counts.extend([self.ftus[ann]['main_counts'][i] for i in intersect_idxes])
-            #intersect_states.extend([self.ftus[ann]['cell_states'][i] for i in intersect_idxes])
-
-
-        return {'polys':intersect_ftus, 'barcodes':intersect_barcodes, 'main_counts':intersect_counts, 'states':intersect_states}
-
-    def thumbnail_overlay(self,cell_val,vis_val):
-        
-        if not cell_val == self.current_cell or self.current_cell == '':
-            self.current_cell = cell_val
-
-            # reading cell thumbnail
-            cell_thumb = Image.open(self.thumbnail_path+f'{cell_val.replace("/","")}_thumbnail_vis.png')
-            
-            vis = np.array(cell_thumb)[:,:,0:3]
-            zero_mask = np.where(np.sum(vis,axis=2)==0,0,vis_val)
-            vis_mask_4d = np.concatenate((vis,zero_mask[:,:,None]),axis=-1)
-            vis_mask_4d = Image.fromarray(np.uint8(vis_mask_4d)).convert('RGBA')
-
-            self.current_cell_thumb = vis_mask_4d
-            vis_overlay = self.thumb.copy()
-            vis_overlay.paste(self.current_cell_thumb,mask=self.current_cell_thumb)
-        
-        elif cell_val == self.current_cell:
-
-            vis = np.array(self.current_cell_thumb)[:,:,0:3]
-            zero_mask = np.where(np.sum(vis,axis=2)==0,0,vis_val)
-            vis_mask_4d = np.concatenate((vis,zero_mask[:,:,None]),axis=-1)
-            vis_mask_4d = Image.fromarray(np.uint8(vis_mask_4d)).convert('RGBA')
-
-            self.current_cell_thumb = vis_mask_4d
-            vis_overlay = self.thumb.copy()
-            vis_overlay.paste(self.current_cell_thumb,mask=self.current_cell_thumb)
-
-
-        return vis_overlay
-"""
 
 class SlideHeatVis:
     def __init__(self,
@@ -1892,13 +1492,11 @@ class SlideHeatVis:
             margin=dict(l=0,r=0,t=0,b=0)
         )
 
-
         return cluster_graph
 
     def grab_image(self,sample_info):
 
         slide_name = sample_info['image_id']
-        #print(slide_name)
         if type(slide_name)==str:
             slide_name = [slide_name.replace('V10S15-103_','')]
         else:
@@ -1922,7 +1520,6 @@ class SlideHeatVis:
             slide_path = [i for i in self.slide_paths if s in i]
 
             slide_path = slide_path[0]
-            #print(slide_path)
 
             wsi = openslide.OpenSlide(slide_path)
             slide_region = wsi.read_region((min_x,min_y),0,(width,height))
@@ -1954,8 +1551,7 @@ class SlideHeatVis:
         selected_image.update_layout(
             margin=dict(l=0,r=0,t=0,b=0)
         )
-        image_metadata = json.dumps(sample_info.to_dict())
-
+        #image_metadata = json.dumps(sample_info.to_dict())
 
         return selected_image
     
@@ -2048,12 +1644,13 @@ def app(*args):
     for ct in cell_graphics_json:
         cell_names.append(cell_graphics_json[ct]['full'])
 
-    # Reading in clustering metadata
+    # Reading in clustering metadata (old way, separate json files for each structure)
     glom_metadata = json.load(open(metadata_path+'FFPE_SpTx_Glomeruli.json'))
     tub_metadata = json.load(open(metadata_path+'FFPE_SpTx_Tubules.json'))
 
     metadata = pd.DataFrame.from_dict(glom_metadata,orient='index')
     metadata = pd.concat([metadata,pd.DataFrame.from_dict(tub_metadata,orient='index')],axis=0,ignore_index=True)
+
 
     # Adding ASCT+B table to files
     asct_b_table = pd.read_csv(asct_b_path,skiprows=list(range(10)))
