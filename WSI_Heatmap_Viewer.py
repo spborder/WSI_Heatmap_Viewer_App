@@ -175,6 +175,7 @@ def gen_layout(cell_types,slides_available, center_point, map_dict, spot_dict):
                 dl.Map(center = center_point, zoom = 12, minZoom=11, children = [
                     dl.TileLayer(url = map_dict['url'], id = 'slide-tile'),
                     dl.LayerGroup(id='mini-label'),
+                    dl.Colorbar(id='map-colorbar'),
                     dl.LayersControl(id = 'layer-control', children = 
                         [
                             dl.Overlay(
@@ -290,7 +291,7 @@ def gen_layout(cell_types,slides_available, center_point, map_dict, spot_dict):
     
     ftu_list = ['glomerulus','Tubules']
     plot_types = ['TSNE','UMAP']
-    labels = ['Cluster','image_id']
+    labels = ['Cluster','image_id','Cell Type']
     # Cluster viewer tab
     cluster_card = dbc.Card([
         dbc.Row([
@@ -300,12 +301,32 @@ def gen_layout(cell_types,slides_available, center_point, map_dict, spot_dict):
                 )
             ],md=4),
             dbc.Col([
-                dcc.Loading(
-                    id = 'loading-image',
-                    children = [
-                        dcc.Graph(id='selected-image',figure=go.Figure())
-                    ]
-                ),
+                dcc.Tabs([
+                    dcc.Tab(
+                        dbc.Card(
+                            id = 'selected-image-card',
+                            children = [
+                                dcc.Loading(
+                                    id = 'loading-image',
+                                    children = [
+                                        dcc.Graph(id='selected-image',figure=go.Figure())
+                                    ]
+                                )
+                            ]
+                        ),label='Selected Images'),
+                    dcc.Tab(
+                        dbc.Card(
+                            id = 'selected-data-card',
+                            children = [
+                                dcc.Loading(
+                                    id='loading-data',
+                                    children = [
+                                        dcc.Graph(id='selected-cell-data',figure=go.Figure())
+                                    ]
+                                )
+                            ]
+                        ),label='Selected Cell Data')
+                ]),
                 html.Div(id='selected-image-info')
             ],md=4),
             dbc.Col([
@@ -360,19 +381,34 @@ def gen_layout(cell_types,slides_available, center_point, map_dict, spot_dict):
     ])
 
     # Tools for selecting regions, transparency, and cells
+    cell_types+=['Max Cell Type','Cell Type States']
+    mini_options = ['All Main Cell Types','Cell States for Current Cell Types','None']
     tools = [
         dbc.Card(
             id='tools-card',
             children=[
                 dbc.CardHeader("Tools"),
                 dbc.CardBody([
-                    html.H6("Select Cell for Heatmap View",className="cell-select"),
-                    html.Div(
-                        id = "cell-select-div",
-                        children=[
-                            dcc.Dropdown(cell_types,cell_types[0],id='cell-drop')
-                        ]
-                    ),
+                    dbc.Row([
+                        dbc.Col([
+                            html.H6("Select Cell for Overlaid Heatmap Viewing",className="cell-select"),
+                            html.Div(
+                                id = 'cell-select-div',
+                                children=[
+                                    dcc.Dropdown(cell_types,cell_types[0],id='cell-drop')
+                                ]
+                            )
+                        ],md=6),
+                        dbc.Col([
+                            html.H6("Options for Overlaid Minicharts",className='mini-select'),
+                            html.Div(
+                                id='mini-select-div',
+                                children=[
+                                    dcc.Dropdown(mini_options,mini_options[0],id='mini-drop')
+                                ]
+                            )
+                        ])
+                    ]),
                     html.Hr(),
                     dbc.Form([
                         dbc.Row([
@@ -686,7 +722,7 @@ class SlideHeatVis:
 
         self.run_type = run_type
 
-        # clustering related properties
+        # clustering related properties (and also cell types, cell states, image_ids, etc.)
         self.metadata = cluster_metadata
 
         self.slide_list = list(slide_info_dict.keys())
@@ -1472,18 +1508,40 @@ class SlideHeatVis:
         
         self.current_ftu = ftu
         # Filtering by selected FTU
-        current_data = self.metadata[self.metadata['ftu_type'].str.match(ftu)]
+        #current_data = self.metadata[self.metadata['ftu_type'].str.match(ftu)]
+        current_data = []
+        for f in self.metadata:
+            if 'ftu_type' in f:
+                if f['ftu_type'] == ftu:
+                    current_data.append(f)
 
         if plot=='TSNE':
-            plot_data_x = current_data['x_tsne'].tolist()
-            plot_data_y = current_data['y_tsne'].tolist()
+            #plot_data_x = current_data['x_tsne'].tolist()
+            #plot_data_y = current_data['y_tsne'].tolist()
+            plot_data_x = [i['x_tsne'] for i in current_data]
+            plot_data_y = [i['y_tsne'] for i in current_data]
 
         elif plot=='UMAP':
-            plot_data_x = current_data['x_umap'].tolist()
-            plot_data_y = current_data['y_umap'].tolist()
+            #plot_data_x = current_data['x_umap'].tolist()
+            #plot_data_y = current_data['y_umap'].tolist()
+            plot_data_x = [i['x_umap'] for i in current_data]
+            plot_data_y = [i['y_umap'] for i in current_data]
 
-        custom_data = list(current_data.index)
-        label_data = current_data[label].tolist()
+        #custom_data = list(current_data.index)
+        #label_data = current_data[label].tolist()
+
+        custom_data = [i['ftu_name'] for i in current_data]
+        # If the label is image_id or cluster
+        try:
+            label_data = [i[label] for i in current_data]
+        except:
+            # If the label is a main cell type or cell states of a main cell type
+            try:
+                label_data = [i['Main_Cell_Types'][label] for i in current_data]
+            except:
+                # Need to add something here for using cell states as a label
+                label_data[i['Cell_States'] for i in current_data]
+
 
         graph_df = pd.DataFrame({'x':plot_data_x,'y':plot_data_y,'ID':custom_data,'Label':label_data})
 
@@ -1533,14 +1591,16 @@ class SlideHeatVis:
 
         if 'cluster-graph.selectedData' in list(ctx.triggered_prop_ids.keys()):
             sample_ids = [i['customdata'][0] for i in selected['points']]
-            sample_info = self.metadata.loc[sample_ids]
+            #sample_info = self.metadata.loc[sample_ids]
+            sample_info = [i for i in self.metadata if self.metadata['ftu_name'] in sample_ids]
         else:
             if hover is not None:
                 sample_id = hover['points'][0]['customdata']
-                sample_info = self.metadata.loc[sample_id]
-
+                #sample_info = self.metadata.loc[sample_id]
+                sample_info = [i for i in self.metadata if self.metadata['ftu_name']==sample_id]
             else:
-                sample_info = self.metadata.iloc[0,:]
+                #sample_info = self.metadata.iloc[0,:]
+                sample_info = self.metadata[0]
 
         current_image = self.grab_image(sample_info)
         if len(current_image)==1:
@@ -1659,10 +1719,9 @@ def app(*args):
             current_geojson = geojson.load(f)
         
         # Iterating through features and adding properties to metadata
+        # This will not include any of the geometries data which would be the majority
         for f in current_geojson['features']:
             metadata.append(f['properties'])
-            
-
 
     # Adding ASCT+B table to files
     asct_b_table = pd.read_csv(asct_b_path,skiprows=list(range(10)))
