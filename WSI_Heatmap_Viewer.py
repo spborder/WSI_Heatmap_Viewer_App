@@ -1540,7 +1540,7 @@ class SlideHeatVis:
                 label_data = [i['Main_Cell_Types'][label] for i in current_data]
             except:
                 # Need to add something here for using cell states as a label
-                label_data[i['Cell_States'] for i in current_data]
+                label_data = [i['Cell_States'] for i in current_data]
 
 
         graph_df = pd.DataFrame({'x':plot_data_x,'y':plot_data_y,'ID':custom_data,'Label':label_data})
