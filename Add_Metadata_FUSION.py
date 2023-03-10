@@ -191,7 +191,7 @@ class CurrentAnnotations:
 def main():
 
     # Add a '*' to reference more than one metadata
-    current_meta_path = '/mnt/c/Users/Sam/Desktop/HIVE/SpotNet_NonEssential_Files/CellAnnotations_Histomics/test/*_histomics_add.json'
+    current_meta_path = '/mnt/c/Users/Sam/Desktop/HIVE/SpotNet_NonEssential_Files/CellAnnotations_GeoJSON/*_scaled_add.geojson'
     
     if '*' in current_meta_path:
         current_metas = glob(current_meta_path)
@@ -199,7 +199,7 @@ def main():
         current_metas = current_meta_path
 
     # slide_id used for separating data for each slide to add to the slide-specific annotations file
-    add_meta_path = '/mnt/c/Users/Sam/Desktop/HIVE/SpotNet_NonEssential_Files/WSI_Heatmap_Viewer_App/assets/cluster_metadata/FFPE_SpTx_Glomeruli.json'
+    add_meta_path = '/mnt/c/Users/Sam/Desktop/HIVE/SpotNet_NonEssential_Files/WSI_Heatmap_Viewer_App/assets/cluster_metadata/FFPE_SpTx_Tubules.json'
     slide_id = 'image_id'
     poly_type = 'box'
 
@@ -259,9 +259,9 @@ def main():
                     print('need to add functionality here')
 
                 #try:
-                current_annotations = CurrentAnnotations(current_ann_path = [i for i in current_metas if slide in i][0])
+                current_annotations = CurrentAnnotations(current_ann_path = [i for i in current_metas if slide in i][0],wsi_dims_data=slide_info_dict[slide+'.svs'])
                 current_annotations.add_metadata(add_metadata)
-                current_annotations.save_metadata([i for i in current_metas if slide in i][0].replace('.json','_add.json'))
+                current_annotations.save_metadata([i for i in current_metas if slide in i][0].replace('.geojson','_add.geojson'))
                 #except IndexError:
                 #   print(f'Slide not included: {slide}')
                 #   continue

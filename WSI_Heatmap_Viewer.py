@@ -321,7 +321,8 @@ def gen_layout(cell_types,slides_available, center_point, map_dict, spot_dict):
                                 dcc.Loading(
                                     id='loading-data',
                                     children = [
-                                        dcc.Graph(id='selected-cell-data',figure=go.Figure())
+                                        dcc.Graph(id='selected-cell-types',figure=go.Figure()),
+                                        dcc.Graph(id='selected-cell-states',figure=go.Figure())
                                     ]
                                 )
                             ]
@@ -381,8 +382,8 @@ def gen_layout(cell_types,slides_available, center_point, map_dict, spot_dict):
     ])
 
     # Tools for selecting regions, transparency, and cells
-    cell_types+=['Max Cell Type','Cell Type States']
-    mini_options = ['All Main Cell Types','Cell States for Current Cell Types','None']
+    cell_types+=['Max Cell Type','Cell Type States','Morphometrics Clusters']
+    mini_options = ['All Main Cell Types','Cell States for Current Cell Type','None']
     tools = [
         dbc.Card(
             id='tools-card',
@@ -801,7 +802,7 @@ class SlideHeatVis:
 
         self.app.callback(
             [Output('cell-graphic','src'),Output('cell-hierarchy','elements'),
-             Output('layer-control','children')],
+             Output('layer-control','children'),Output('map-colorbar','colorscale')],
              [Input('cell-drop','value'),Input('vis-slider','value')]
         )(self.update_cell)
 
@@ -863,9 +864,16 @@ class SlideHeatVis:
         self.app.callback(
             [Input('cluster-graph','clickData'),
             Input('cluster-graph','selectedData')],
-            Output('selected-image','figure'),
+            [Output('selected-image','figure'),
+            Output('selected-cell-types','figure'),
+            Output('selected-cell-states','figure')],
             prevent_initial_call=True
         )(self.update_selected)
+
+        self.app.callback(
+            Input('selected-cell-types','clickData'),
+            Output('selected-cell-states','figure')
+        )(self.update_selected_state_bar)
        
         # Comment out this line when running on the web
         if self.run_type == 'local':
@@ -1084,7 +1092,8 @@ class SlideHeatVis:
     def update_cell(self,cell_val,vis_val):
         
         # Updating current cell prop
-        self.current_cell = self.cell_names_key[cell_val]
+        if not cell_val in ['Morphometric Clusters','Max Cell Type','Cell Type States']:
+            self.current_cell = self.cell_names_key[cell_val]
         self.cell_vis_val = vis_val/100
 
         self.update_hex_color_key()
@@ -1096,7 +1105,8 @@ class SlideHeatVis:
         # Modifying ftu and spot geojson to add fill color and opacity
         for f in self.wsi.geojson_ftus['features']:
             
-            cell_pct = f['properties']['Main_Cell_Types'][self.current_cell]
+            if not cell_val in ['Morphometric Clusters','Max Cell Type','Cell Type States']:
+                cell_pct = f['properties']['Main_Cell_Types'][self.current_cell]
             hex_color = self.hex_color_key[cell_pct]
             f['properties']['fillColor'] = hex_color
             f['properties']['fillOpacity'] = vis_val
@@ -1155,7 +1165,7 @@ class SlideHeatVis:
         cell_graphic = self.cell_graphics_key[self.current_cell]['graphic']
         cell_hierarchy = self.gen_cyto()
 
-        return cell_graphic, cell_hierarchy, new_children
+        return cell_graphic, cell_hierarchy, new_children, list(self.hex_color_key.values())
 
     def get_hover(self,glom_hover,spot_hover,tub_hover,art_hover):
 
@@ -1516,19 +1526,13 @@ class SlideHeatVis:
                     current_data.append(f)
 
         if plot=='TSNE':
-            #plot_data_x = current_data['x_tsne'].tolist()
-            #plot_data_y = current_data['y_tsne'].tolist()
             plot_data_x = [i['x_tsne'] for i in current_data]
             plot_data_y = [i['y_tsne'] for i in current_data]
 
         elif plot=='UMAP':
-            #plot_data_x = current_data['x_umap'].tolist()
-            #plot_data_y = current_data['y_umap'].tolist()
             plot_data_x = [i['x_umap'] for i in current_data]
             plot_data_y = [i['y_umap'] for i in current_data]
 
-        #custom_data = list(current_data.index)
-        #label_data = current_data[label].tolist()
 
         custom_data = [i['ftu_name'] for i in current_data]
         # If the label is image_id or cluster
@@ -1554,30 +1558,15 @@ class SlideHeatVis:
 
     def grab_image(self,sample_info):
 
-        slide_name = sample_info['image_id']
-        if type(slide_name)==str:
-            slide_name = [slide_name.replace('V10S15-103_','')]
-        else:
-            slide_name = [i.replace('V10S15-103_','') for i in slide_name.tolist()]
-
-        #print(slide_name)
         img_list = []
-        for idx,s in enumerate(slide_name):
+        for idx,s in enumerate(sample_info):
             # openslide needs min_x, min_y, width, height
-            try:
-                min_x = int(sample_info['Min_x_coord'])
-                min_y = int(sample_info['Min_y_coord'])
-                width = int(sample_info['Max_x_coord'])-min_x
-                height = int(sample_info['Max_y_coord'])-min_y
-            except:
-                min_x = int(sample_info['Min_x_coord'].tolist()[idx])
-                min_y = int(sample_info['Min_y_coord'].tolist()[idx])
-                width = int(sample_info['Max_x_coord'].tolist()[idx])-min_x
-                height = int(sample_info['Max_y_coord'].tolist()[idx])-min_y      
+            min_x = int(s['Min_x_coord'])
+            min_y = int(s['Min_y_coord'])
+            width = int(s['Max_x_coord'])-min_x
+            height = int(s['Max_y_coord'])-min_y
 
-            slide_path = [i for i in self.slide_paths if s in i]
-
-            slide_path = slide_path[0]
+            slide_path = self.slide_info_dict[s['image_id']+'.svs']['slide_path']
 
             wsi = openslide.OpenSlide(slide_path)
             slide_region = wsi.read_region((min_x,min_y),0,(width,height))
@@ -1591,16 +1580,23 @@ class SlideHeatVis:
 
         if 'cluster-graph.selectedData' in list(ctx.triggered_prop_ids.keys()):
             sample_ids = [i['customdata'][0] for i in selected['points']]
-            #sample_info = self.metadata.loc[sample_ids]
-            sample_info = [i for i in self.metadata if self.metadata['ftu_name'] in sample_ids]
+            sample_info = []
+            for f in self.metadata:
+                if 'ftu_name' in f:
+                    if f['ftu_name'] in sample_ids:
+                        sample_info.append(f)
         else:
             if hover is not None:
-                sample_id = hover['points'][0]['customdata']
-                #sample_info = self.metadata.loc[sample_id]
-                sample_info = [i for i in self.metadata if self.metadata['ftu_name']==sample_id]
+                sample_id = hover['points'][0]['customdata'][0]
+                sample_info = []
+                for f in self.metadata:
+                    if 'ftu_name' in f:
+                        if f['ftu_name']==sample_id:
+                            sample_info.append(f)
             else:
-                #sample_info = self.metadata.iloc[0,:]
-                sample_info = self.metadata[0]
+                sample_info = [self.metadata[0]]
+
+        self.current_selected_samples = sample_info
 
         current_image = self.grab_image(sample_info)
         if len(current_image)==1:
@@ -1612,8 +1608,44 @@ class SlideHeatVis:
             margin=dict(l=0,r=0,t=0,b=0)
         )
 
-        return selected_image
+        # Preparing figure containing cell types + cell states info
+        counts_data = pd.DataFrame([i['Main_Cell_Types'] for i in sample_info]).sum(axis=0).to_frame()
+        counts_data.columns = ['Selected Data Points']
+        counts_data = counts_data.reset_index()
+        # Normalizing to sum to 1
+        counts_data['Selected Data Points'] = counts_data['Selected Data Points']/counts_data['Selected Data Points'].sum()
+        # Only getting the top-5
+        counts_data = counts_data.sort_values(by='Selected Data Points',ascending=False)
+        counts_data = counts_data[counts_data['Selected Data Points']>0]
+        f_pie = px.pie(counts_data,values='Selected Data Points',names='index')
+
+        # Getting initial cell state info
+        first_cell = counts_data['index'].tolist()[0]
+        state_data = pd.DataFrame([i['Cell_States'][first_cell] for i in sample_info]).sum(axis=0).to_frame()
+        state_data = state_data.reset_index()
+        state_data.columns = ['Cell States',f'Cell States for {first_cell}']
+
+        state_data[f'Cell States for {first_cell}'] = state_data[f'Cell States for {first_cell}']/state_data[f'Cell States for {first_cell}'].sum()
+
+        s_bar = px.bar(state_data, x='Cell States', y = f'Cell States for {first_cell}', title = f'Cell States for {self.cell_graphics_key[first_cell]["full"]} in selected points')
+        
+        selected_cell_types = go.Figure(f_pie)
+        selected_cell_states = go.Figure(s_bar)
+
+        return selected_image, selected_cell_types, selected_cell_states
     
+    def update_selected_state_bar(self, selected_cell_click):
+        cell_type = selected_cell_click['points'][0]['label']
+
+        state_data = pd.DataFrame([i['Cell_States'][cell_type] for i in self.current_selected_samples]).sum(axis=0).to_frame()
+        state_data = state_data.reset_index()
+        state_data.columns = ['Cell States',f'Cell States for {cell_type}']
+        state_data[f'Cell States for {cell_type}'] = state_data[f'Cell States for {cell_type}']/state_data[f'Cell States for {cell_type}'].sum()
+
+        s_bar = px.bar(state_data, x='Cell States', y = f'Cell States for {cell_type}', title = f'Cell States for {self.cell_graphics_key[cell_type]["full"]} in selected points')
+        
+        return go.Figure(s_bar)
+
 
 
 #if __name__ == '__main__':
@@ -1663,13 +1695,13 @@ def app(*args):
         slide_name = slide_names[0]
 
         slide_url = 'http://localhost:5000/rgb/'+slide_info_dict[slide_name]["key_name"]+'/{z}/{x}/{y}.png?r=B04&r_range=[46,168]&g=B03&g_range=[46,168]&b=B02&b_range=[46,168]&'
-        ftu_path = base_dir+'SpotNet_NonEssential_Files/CellAnnotations_GeoJSON/'+slide_name.replace('.svs','_scaled.geojson')
+        ftu_path = base_dir+'SpotNet_NonEssential_Files/CellAnnotations_GeoJSON/'+slide_name.replace('.svs','_scaled_add_add.geojson')
         spot_path = base_dir+'SpotNet_NonEssential_Files/CellAnnotations_GeoJSON/'+slide_name.replace('.svs','_Spots_scaled.geojson')
         cell_graphics_path = 'graphic_reference.json'
         asct_b_path = 'Kidney_v1.2 - Kidney_v1.2.csv'
 
         #metadata_path = './assets/cluster_metadata/'
-        metadata_paths = [base_dir+'SpotNet_NonEssential_Files/CellAnnotations_GeoJSON/'+s.replace('.svs','_scaled.geojson') for s in list(slide_info_dict.keys())]
+        metadata_paths = [base_dir+'SpotNet_NonEssential_Files/CellAnnotations_GeoJSON/'+s.replace('.svs','_scaled_add_add.geojson') for s in list(slide_info_dict.keys())]
 
     elif run_type == 'web' or run_type=='AWS':
         # For test deployment
@@ -1685,7 +1717,7 @@ def app(*args):
         slide_name = slide_names[0]
 
         slide_url = 'http://0.0.0.0:5000/rgb/'+slide_info_dict[slide_name]['key_name']+'/{z}/{x}/{y}.png?r=B04&r_range=[46,168]&g=B03&g_range=[46,168]&b=B02&b_range=[46,168]&'
-        spot_path = slide_info_path+slide_name.replace('.svs','_Spots_scaled.geojson')
+        spot_path = slide_info_path+slide_name.replace('.svs','_Spots_scaled_add_add.geojson')
         ftu_path = slide_info_path+slide_name.replace('.svs','_scaled.geojson')
         cell_graphics_path = base_dir+'graphic_reference.json'
         asct_b_path = base_dir+'Kidney_v1.2 - Kidney_v1.2.csv'
@@ -1703,13 +1735,6 @@ def app(*args):
     cell_names = []
     for ct in cell_graphics_json:
         cell_names.append(cell_graphics_json[ct]['full'])
-
-    # Reading in clustering metadata (old way, separate json files for each structure)
-    #glom_metadata = json.load(open(metadata_path+'FFPE_SpTx_Glomeruli.json'))
-    #tub_metadata = json.load(open(metadata_path+'FFPE_SpTx_Tubules.json'))
-
-    #metadata = pd.DataFrame.from_dict(glom_metadata,orient='index')
-    #metadata = pd.concat([metadata,pd.DataFrame.from_dict(tub_metadata,orient='index')],axis=0,ignore_index=True)
 
     # Compiling info for clustering metadata
     metadata = []
@@ -1741,8 +1766,6 @@ def app(*args):
 
     with open(spot_path) as f:
         spot_geojson_polys = geojson.load(f)
-
-
 
     map_dict = {
         'url':wsi.image_url,

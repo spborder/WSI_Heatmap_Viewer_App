@@ -19,7 +19,7 @@ RUN python3 -m pip install --upgrade pip
 # Running the app
 WORKDIR /
 RUN python3 -m pip install -r ./requirements.txt --no-cache-dir
-RUN python3 -m pip freeze
+RUN python3 -m pip freeze > pip_installed_packages.txt
 
 EXPOSE 8000
 
