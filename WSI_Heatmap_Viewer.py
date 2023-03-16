@@ -1772,14 +1772,14 @@ def app(*args):
         slide_names = [i.split('/')[-1] for i in available_slides]
         slide_name = slide_names[0]
 
-        slide_url = 'http://0.0.0.0:5000/rgb/'+slide_info_dict[slide_name]['key_name']+'/{z}/{x}/{y}.png?r=B04&r_range=[46,168]&g=B03&g_range=[46,168]&b=B02&b_range=[46,168]&'
+        slide_url = f'{os.environ.get("TILE_SERVER_HOST")}/rgb/'+slide_info_dict[slide_name]['key_name']+'/{z}/{x}/{y}.png?r=B04&r_range=[46,168]&g=B03&g_range=[46,168]&b=B02&b_range=[46,168]&'
         spot_path = slide_info_path+slide_name.replace('.svs','_Spots_scaled.geojson')
         ftu_path = slide_info_path+slide_name.replace('.svs','_scaled_add_add.geojson')
         cell_graphics_path = base_dir+'graphic_reference.json'
         asct_b_path = base_dir+'Kidney_v1.2 - Kidney_v1.2.csv'
 
         #metadata_path = base_dir+'assets/cluster_metadata/'
-        metadata_paths = [slide_info_path+s.replace('.svs','_scaled.geojson') for s in list(slide_info_dict.keys())]
+        metadata_paths = [slide_info_path+s.replace('.svs','_scaled_add_add.geojson') for s in list(slide_info_dict.keys())]
     
     # Adding slide paths to the slide_info_dict
     for slide,path in zip(slide_names,available_slides):
