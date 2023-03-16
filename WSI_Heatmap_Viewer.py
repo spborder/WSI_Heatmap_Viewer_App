@@ -594,6 +594,7 @@ class WholeSlide:
             ftu_polys[p]['barcodes'] = []
             ftu_polys[p]['main_counts'] = []
             ftu_polys[p]['cell_states'] = []
+            ftu_polys[p]['Cluster'] = []
 
             ftu_groups[p] = []
             group_count = 0
@@ -620,6 +621,9 @@ class WholeSlide:
                 ftu_polys[p]['barcodes'].append(i['properties']['label'])
                 ftu_polys[p]['main_counts'].append(i['properties']['Main_Cell_Types'])
                 ftu_polys[p]['cell_states'].append(i['properties']['Cell_States'])
+                
+                if 'Cluster' in i['properties']:
+                    ftu_polys[p]['Cluster'].append(i['properties']['Cluster'])
 
                 # Adding group info to the group list for a given ftu
                 if group_count==self.group_n-1:
@@ -628,7 +632,8 @@ class WholeSlide:
                         'polygons':ftu_polys[p]['polygons'],
                         'barcodes':ftu_polys[p]['barcodes'],
                         'main_counts':ftu_polys[p]['main_counts'],
-                        'cell_states':ftu_polys[p]['cell_states']
+                        'cell_states':ftu_polys[p]['cell_states'],
+                        'Cluster':ftu_polys[p]['Cluster']
                         })
 
                     # resetting back to empty/0
@@ -636,6 +641,8 @@ class WholeSlide:
                     ftu_polys[p]['barcodes'] = []
                     ftu_polys[p]['main_counts'] = []
                     ftu_polys[p]['cell_states'] = []
+                    ftu_polys[p]['Cluster'] = []
+
                     group_count = 0
                     group_bounds = []
 
@@ -645,7 +652,8 @@ class WholeSlide:
                 'polygons':ftu_polys[p]['polygons'],
                 'barcodes':ftu_polys[p]['barcodes'],
                 'main_counts':ftu_polys[p]['main_counts'],
-                'cell_states':ftu_polys[p]['cell_states']
+                'cell_states':ftu_polys[p]['cell_states'],
+                'Cluster':ftu_polys[p]['Cluster']
             })
 
         return ftu_groups
@@ -772,18 +780,34 @@ class SlideHeatVis:
         }
 
         # Colormap settings (customize later)
-        self.color_map = cm.get_cmap('jet')
+        self.color_map = cm.get_cmap('jet',255)
         self.cell_vis_val = 0.5
         self.ftu_style_handle = assign("""function(feature,context){
             const {color_key,current_cell,fillOpacity,ftu_colors} = context.props.hideout;
-            var cell_value = feature.properties.Main_Cell_Types[current_cell];
-            if (cell_value==0){
-                cell_value = 0.0;
+            
+            if (current_cell==='cluster'){
+                var cell_value = feature.properties.Cluster;
+                cell_value = (cell_value).toFixed(1);
+            } else if (current_cell==='max'){
+                var cell_values = feature.properties.Main_Cell_Types;
+                var cell_value = 0;
+                for (key in cell_values){
+                    test_val = cell_values[key];
+                    if (test_val > cell_value) {
+                        cell_value = test_val;
+                    }
+                }
+                cell_value = (cell_value).toFixed(1);
+
+            } else {
+                var cell_value = feature.properties.Main_Cell_Types[current_cell];
+                if (cell_value==0){
+                    cell_value = 0.0;
+                } else if (cell_value==1){
+                    cell_value = 1.0;
+                }
             }
 
-            if (cell_value==1){
-                cell_value = 1.0;
-            }
             const fillColor = color_key[cell_value];
             var style = {};
             style.fillColor = fillColor;
@@ -872,7 +896,8 @@ class SlideHeatVis:
 
         self.app.callback(
             Input('selected-cell-types','clickData'),
-            Output('selected-cell-states','figure')
+            Output('selected-cell-states','figure'),
+            prevent_initial_call=True
         )(self.update_selected_state_bar)
        
         # Comment out this line when running on the web
@@ -1059,7 +1084,7 @@ class SlideHeatVis:
 
         return state_bar, new_pie_chart
     
-    def update_hex_color_key(self):
+    def update_hex_color_key(self,color_type):
 
         # Iterate through all structures (and spots) in current wsi,
         # concatenate all of their proportions of specific cell types together
@@ -1068,21 +1093,40 @@ class SlideHeatVis:
         # create look-up table for original value --> hex color
         # add that as get_color() function in style dict (fillColor) along with fillOpacity
         raw_values_list = []
-        id_list = []
-        # iterating through current ftus
-        for f in self.wsi.ftus:
-            for g in self.wsi.ftus[f]:
-                # get main counts for this ftu
-                ftu_counts = pd.DataFrame(g['main_counts'])[self.current_cell].tolist()
-                raw_values_list.extend(ftu_counts)
+        if color_type == 'cell_value':
+            # iterating through current ftus
+            for f in self.wsi.ftus:
+                for g in self.wsi.ftus[f]:
+                    # get main counts for this ftu
+                    ftu_counts = pd.DataFrame(g['main_counts'])[self.current_cell].tolist()
+                    raw_values_list.extend(ftu_counts)
 
-        for g in self.wsi.spots:
-            spot_counts = pd.DataFrame(g['main_counts'])[self.current_cell].tolist()
-            raw_values_list.extend(spot_counts)
+            for g in self.wsi.spots:
+                spot_counts = pd.DataFrame(g['main_counts'])[self.current_cell].tolist()
+                raw_values_list.extend(spot_counts)
+
+        elif color_type == 'max_cell':
+            # iterating through current ftus
+            for f in self.wsi.ftus:
+                for g in self.wsi.ftus[f]:
+                    all_cell_type_counts = [np.argmax(list(i.values())) for i in g['main_counts']]
+                    raw_values_list.extend([float(i) for i in np.unique(all_cell_type_counts)])
+        elif color_type == 'cluster':
+            # iterating through current ftus
+            for f in self.wsi.ftus:
+                for g in self.wsi.ftus[f]:
+                    if 'Cluster' in g:
+                        cluster_label = g['Cluster']
+                        raw_values_list.append(cluster_label)
 
         raw_values_list = np.unique(raw_values_list)
         # Converting to RGB
-        rgb_values = np.uint8(255*self.color_map(np.uint8(255*raw_values_list)))[:,0:3]
+        if max(raw_values_list)<=1:
+            rgb_values = np.uint8(255*self.color_map(np.uint8(255*raw_values_list)))[:,0:3]
+        else:
+            scaled_values = [(i-min(raw_values_list))/max(raw_values_list) for i in raw_values_list]
+            rgb_values = np.uint8(255*self.color_map(scaled_values))[:,0:3]
+
         hex_list = []
         for row in range(rgb_values.shape[0]):
             hex_list.append('#'+"%02x%02x%02x" % (rgb_values[row,0],rgb_values[row,1],rgb_values[row,2]))
@@ -1092,24 +1136,23 @@ class SlideHeatVis:
     def update_cell(self,cell_val,vis_val):
         
         # Updating current cell prop
-        if not cell_val in ['Morphometric Clusters','Max Cell Type','Cell Type States']:
+        if not cell_val in ['Morphometrics Clusters','Max Cell Type','Cell Type States']:
             self.current_cell = self.cell_names_key[cell_val]
+            self.update_hex_color_key('cell_value')
+        
+        elif cell_val == 'Max Cell Type':
+            self.update_hex_color_key('max_cell')
+            self.current_cell = 'max'
+        
+        elif cell_val == 'Morphometric Clusters':
+            self.update_hex_color_key('cluster')
+            self.current_cell = 'cluster'
+        
         self.cell_vis_val = vis_val/100
-
-        self.update_hex_color_key()
 
         vis_val = vis_val/100
 
         # Changing fill and fill-opacity properties for structures and adding that as a property
-
-        # Modifying ftu and spot geojson to add fill color and opacity
-        for f in self.wsi.geojson_ftus['features']:
-            
-            if not cell_val in ['Morphometric Clusters','Max Cell Type','Cell Type States']:
-                cell_pct = f['properties']['Main_Cell_Types'][self.current_cell]
-            hex_color = self.hex_color_key[cell_pct]
-            f['properties']['fillColor'] = hex_color
-            f['properties']['fillOpacity'] = vis_val
 
         map_dict = {
             'url':self.wsi.image_url,
@@ -1162,8 +1205,16 @@ class SlideHeatVis:
             ]
     
         # Loading the cell-graphic and hierarchy image
-        cell_graphic = self.cell_graphics_key[self.current_cell]['graphic']
-        cell_hierarchy = self.gen_cyto()
+        cell_graphic = './assets/cell_graphic/default_cell_graphic.png'
+        cell_hierarchy = [
+                        {'data': {'id': 'one', 'label': 'Node 1'}, 'position': {'x': 75, 'y': 75}},
+                        {'data': {'id': 'two', 'label': 'Node 2'}, 'position': {'x': 200, 'y': 200}},
+                        {'data': {'source': 'one', 'target': 'two'}}
+                    ]
+        if self.current_cell in self.cell_graphics_key:
+            cell_graphic = self.cell_graphics_key[self.current_cell]['graphic']
+            cell_hierarchy = self.gen_cyto()
+
 
         return cell_graphic, cell_hierarchy, new_children, list(self.hex_color_key.values())
 
@@ -1444,7 +1495,12 @@ class SlideHeatVis:
 
         self.wsi = new_slide
 
-        self.update_hex_color_key()
+        if not self.current_cell in ['max','cluster']:
+            self.update_hex_color_key('cell_value')
+        elif self.current_cell == 'max':
+            self.update_hex_color_key('max_cell')
+        elif self.current_cell == 'cluster':
+            self.update_hex_color_key('cluster')
 
         # Getting map_dict and spot_dict for overlays
         with open(new_ftu_path) as f:
@@ -1717,8 +1773,8 @@ def app(*args):
         slide_name = slide_names[0]
 
         slide_url = 'http://0.0.0.0:5000/rgb/'+slide_info_dict[slide_name]['key_name']+'/{z}/{x}/{y}.png?r=B04&r_range=[46,168]&g=B03&g_range=[46,168]&b=B02&b_range=[46,168]&'
-        spot_path = slide_info_path+slide_name.replace('.svs','_Spots_scaled_add_add.geojson')
-        ftu_path = slide_info_path+slide_name.replace('.svs','_scaled.geojson')
+        spot_path = slide_info_path+slide_name.replace('.svs','_Spots_scaled.geojson')
+        ftu_path = slide_info_path+slide_name.replace('.svs','_scaled_add_add.geojson')
         cell_graphics_path = base_dir+'graphic_reference.json'
         asct_b_path = base_dir+'Kidney_v1.2 - Kidney_v1.2.csv'
 
