@@ -173,8 +173,9 @@ def gen_layout(cell_types,slides_available, center_point, map_dict, spot_dict):
             html.Div(
                 dl.Map(center = center_point, zoom = 12, minZoom=11, children = [
                     dl.TileLayer(url = map_dict['url'], id = 'slide-tile'),
+                    dl.FeatureGroup([dl.EditControl(id='edit_control')]),
                     dl.LayerGroup(id='mini-label'),
-                    dl.Colorbar(id='map-colorbar'),
+                    html.Div(id='colorbar-div',children = [dl.Colorbar(id='map-colorbar')]),
                     dl.LayersControl(id = 'layer-control', children = 
                         [
                             dl.Overlay(
@@ -247,8 +248,17 @@ def gen_layout(cell_types,slides_available, center_point, map_dict, spot_dict):
     ]
 
     # Cell card graphic and hierarchy
+    cell_card_types = cell_types.copy()
     cell_card = dbc.Card([
         dbc.CardBody([
+            dbc.Row([
+                dbc.Col([dbc.Label('Select a Cell Type to view the Cell Hierarchy')],md=4),
+                dbc.Col([
+                    dcc.Dropdown(
+                        cell_card_types,cell_card_types[0],id='cell-cards-drop'
+                    )
+                ],md=8)
+            ]),
             dbc.Row([
                 dbc.Col([
                     dbc.Label("Cell Graphic", html_for="cell-graphic"),
@@ -265,7 +275,7 @@ def gen_layout(cell_types,slides_available, center_point, map_dict, spot_dict):
                         id = 'cell-hierarchy',
                         layout={'name':'preset'},
                         style = {'width':'100%','height':'400px'},
-                        minZoom = 1,
+                        minZoom = 0.5,
                         maxZoom = 3,
                         stylesheet=cyto_style,
                         elements = [
@@ -292,7 +302,7 @@ def gen_layout(cell_types,slides_available, center_point, map_dict, spot_dict):
     
     ftu_list = ['glomerulus','Tubules']
     plot_types = ['TSNE','UMAP']
-    labels = ['Cluster','image_id','Cell Type']
+    labels = ['Cluster','image_id']+cell_types.copy()
     # Cluster viewer tab
     cluster_card = dbc.Card([
         dbc.Row([
@@ -389,7 +399,7 @@ def gen_layout(cell_types,slides_available, center_point, map_dict, spot_dict):
     ])
 
     # Tools for selecting regions, transparency, and cells
-    cell_types+=['Max Cell Type','Cell Type States','Morphometrics Clusters']
+    cell_types+=['Max Cell Type','Morphometrics Clusters']
     mini_options = ['All Main Cell Types','Cell States for Current Cell Type','None']
     tools = [
         dbc.Card(
@@ -789,27 +799,36 @@ class SlideHeatVis:
         self.cell_vis_val = 0.5
         self.ftu_style_handle = assign("""function(feature,context){
             const {color_key,current_cell,fillOpacity,ftu_colors} = context.props.hideout;
-            
+
             if (current_cell==='cluster'){
                 var cell_value = feature.properties.Cluster;
                 cell_value = (cell_value).toFixed(1);
             } else if (current_cell==='max'){
+                // Extracting all the cell values for a given FTU/Spot
                 var cell_values = feature.properties.Main_Cell_Types;
-                var cell_value = 0;
-                for (key in cell_values){
-                    test_val = cell_values[key];
+                // Initializing some comparison values
+                var cell_value = 0.0;
+                var use_cell_value = 0.0;
+                var cell_idx = -1.0;
+                // Iterating through each cell type in cell values
+                for (var key in cell_values){
+                    cell_idx += 1.0;
+                    var test_val = cell_values[key];
+                    // If the test value is greater than the cell_value, replace cell value with that test value
                     if (test_val > cell_value) {
                         cell_value = test_val;
+                        use_cell_value = cell_idx;
                     }
                 }
-                cell_value = (cell_value).toFixed(1);
+                cell_value = (use_cell_value).toFixed(1);
 
             } else {
                 var cell_value = feature.properties.Main_Cell_Types[current_cell];
-                if (cell_value==0){
-                    cell_value = 0.0;
-                } else if (cell_value==1){
-                    cell_value = 1.0;
+                
+                if (cell_value==1) {
+                    cell_value = cell_value.toFixed(1);
+                } else if (cell_value==0) {
+                    cell_value = cell_value.toFixed(1);
                 }
             }
 
@@ -830,10 +849,14 @@ class SlideHeatVis:
         )(self.update_roi_pie)
 
         self.app.callback(
-            [Output('cell-graphic','src'),Output('cell-hierarchy','elements'),
-             Output('layer-control','children'),Output('map-colorbar','colorscale')],
-             [Input('cell-drop','value'),Input('vis-slider','value')]
+            [Output('layer-control','children'),Output('colorbar-div','children')],
+            [Input('cell-drop','value'),Input('vis-slider','value')]
         )(self.update_cell)
+        
+        self.app.callback(
+            [Output('cell-graphic','src'),Output('cell-hierarchy','elements')],
+            Input('cell-cards-drop','value')
+        )(self.update_cell_hierarchy)
 
         self.app.callback(
             [Output('state-bar','figure'),Output('roi-pie','figure')],
@@ -862,8 +885,7 @@ class SlideHeatVis:
 
         self.app.callback(
             Output('collapse-content','is_open'),
-            [Input('collapse-descrip','n_clicks'),
-            Input('collapse-descrip','children')],
+            Input('collapse-descrip','n_clicks'),
             [State('collapse-content','is_open')],
             prevent_initial_call=True
         )(self.view_instructions)
@@ -887,7 +909,8 @@ class SlideHeatVis:
             [Input('ftu-select','value'),
             Input('plot-select','value'),
             Input('label-select','value')],
-            Output('cluster-graph','figure')
+            [Output('cluster-graph','figure'),
+             Output('label-select','options')]
         )(self.update_graph)
 
         self.app.callback(
@@ -912,10 +935,10 @@ class SlideHeatVis:
         elif self.run_type == 'AWS':
             self.app.run_server(host = '0.0.0.0',debug=False,use_reloader=False,port=8000)
 
-    def view_instructions(self,n,text,is_open):
+    def view_instructions(self,n,is_open):
         if n:
-            return [not is_open]
-        return [is_open]
+            return not is_open
+        return is_open
     
     def update_roi_pie(self,zoom,viewport,bounds):
 
@@ -1112,6 +1135,7 @@ class SlideHeatVis:
                 for g in self.wsi.ftus[f]:
                     all_cell_type_counts = [np.argmax(list(i.values())) for i in g['main_counts']]
                     raw_values_list.extend([float(i) for i in np.unique(all_cell_type_counts)])
+
         elif color_type == 'cluster':
             # iterating through current ftus
             for f in self.wsi.ftus:
@@ -1140,14 +1164,21 @@ class SlideHeatVis:
         if not cell_val in ['Morphometrics Clusters','Max Cell Type','Cell Type States']:
             self.current_cell = self.cell_names_key[cell_val]
             self.update_hex_color_key('cell_value')
+
+            color_bar = dl.Colorbar(colorscale = list(self.hex_color_key.values()),width=600,height=10,position='bottomleft')
         
         elif cell_val == 'Max Cell Type':
             self.update_hex_color_key('max_cell')
             self.current_cell = 'max'
+
+            cell_types = list(self.wsi.geojson_ftus['features'][0]['properties']['Main_Cell_Types'].keys())
+            color_bar = dlx.categorical_colorbar(categories = cell_types, colorscale = list(self.hex_color_key.values()),width=600,height=10,position='bottomleft')
         
         elif cell_val == 'Morphometric Clusters':
             self.update_hex_color_key('cluster')
             self.current_cell = 'cluster'
+
+            color_bar = dlx.categorical_colorbar(categories = list(self.hex_color_key.keys()),colorscale = list(self.hex_color_key.values()),width=600,height=10,position='bottomleft')
         
         self.cell_vis_val = vis_val/100
 
@@ -1204,7 +1235,10 @@ class SlideHeatVis:
                             hoverStyle = arrow_function(dict(weight=5, color = spot_dict['hover_color'], dashArray = '')))),
                     name = 'Spots', checked = False, id = self.wsi.slide_info_dict['key_name']+'_Spots')
             ]
-    
+
+        return new_children, color_bar
+
+    def update_cell_hierarchy(self,cell_val):
         # Loading the cell-graphic and hierarchy image
         cell_graphic = './assets/cell_graphic/default_cell_graphic.png'
         cell_hierarchy = [
@@ -1212,33 +1246,33 @@ class SlideHeatVis:
                         {'data': {'id': 'two', 'label': 'Node 2'}, 'position': {'x': 200, 'y': 200}},
                         {'data': {'source': 'one', 'target': 'two'}}
                     ]
-        if self.current_cell in self.cell_graphics_key:
-            cell_graphic = self.cell_graphics_key[self.current_cell]['graphic']
-            cell_hierarchy = self.gen_cyto()
+        if self.cell_names_key[cell_val] in self.cell_graphics_key:
+            cell_graphic = self.cell_graphics_key[self.cell_names_key[cell_val]]['graphic']
+            cell_hierarchy = self.gen_cyto(self.cell_names_key[cell_val])
 
-
-        return cell_graphic, cell_hierarchy, new_children, list(self.hex_color_key.values())
+        return cell_graphic, cell_hierarchy
 
     def get_hover(self,glom_hover,spot_hover,tub_hover,art_hover):
 
-        hover_text = ''
-        if 'glom-bounds.hover_feature' in ctx.triggered_prop_ids:
-            if not glom_hover is None:
-                hover_text = f'Glomerulus, {self.current_cell}: {round(glom_hover["properties"]["Main_Cell_Types"][self.current_cell],3)}'
-        
-        if 'spot-bounds.hover_feature' in ctx.triggered_prop_ids:
-            if not spot_hover is None:
-                hover_text = f'Spot, {self.current_cell}: {round(spot_hover["properties"]["Main_Cell_Types"][self.current_cell],3)}'
+        if not self.current_cell in ['max','cluster']:
+            hover_text = ''
+            if 'glom-bounds.hover_feature' in ctx.triggered_prop_ids:
+                if not glom_hover is None:
+                    hover_text = f'Glomerulus, {self.current_cell}: {round(glom_hover["properties"]["Main_Cell_Types"][self.current_cell],3)}'
+            
+            if 'spot-bounds.hover_feature' in ctx.triggered_prop_ids:
+                if not spot_hover is None:
+                    hover_text = f'Spot, {self.current_cell}: {round(spot_hover["properties"]["Main_Cell_Types"][self.current_cell],3)}'
 
-        if 'tub-bounds.hover_feature' in ctx.triggered_prop_ids:
-            if not tub_hover is None:
-                hover_text = f'Tubule, {self.current_cell}: {round(tub_hover["properties"]["Main_Cell_Types"][self.current_cell],3)}'
+            if 'tub-bounds.hover_feature' in ctx.triggered_prop_ids:
+                if not tub_hover is None:
+                    hover_text = f'Tubule, {self.current_cell}: {round(tub_hover["properties"]["Main_Cell_Types"][self.current_cell],3)}'
 
-        if 'art-bounds.hover_feature' in ctx.triggered_prop_ids:
-            if not art_hover is None:
-                hover_text = f'Arteriole, {self.current_cell}: {round(art_hover["properties"]["Main_Cell_Types"][self.current_cell],3)}'
+            if 'art-bounds.hover_feature' in ctx.triggered_prop_ids:
+                if not art_hover is None:
+                    hover_text = f'Arteriole, {self.current_cell}: {round(art_hover["properties"]["Main_Cell_Types"][self.current_cell],3)}'
 
-        return hover_text
+            return hover_text
     
     def get_click(self,glom_click,spot_click,tub_click,art_click,mini_specs):
 
@@ -1281,12 +1315,12 @@ class SlideHeatVis:
 
                     return [mini_pie_chart]
              
-    def gen_cyto(self):
+    def gen_cyto(self,cell_val):
 
         cyto_elements = []
 
         # Getting cell sub-types under that main cell
-        cell_subtypes = self.cell_graphics_key[self.current_cell]['subtypes']
+        cell_subtypes = self.cell_graphics_key[cell_val]['subtypes']
 
         # Getting all the rows that contain these sub-types
         table_data = self.table_df.dropna(subset = ['CT/1/ABBR'])
@@ -1295,7 +1329,7 @@ class SlideHeatVis:
         # cell type
         cyto_elements.append(
             {'data':{'id':'Main_Cell',
-                     'label':self.current_cell,
+                     'label':cell_val,
                      'url':'./assets/cell.png'},
             'classes': 'CT',
             'position':{'x':self.node_cols['Cell Types']['x_start'],'y':self.node_cols['Cell Types']['y_start']},
@@ -1527,6 +1561,14 @@ class SlideHeatVis:
         self.current_ftu = ftu
         # Filtering by selected FTU
         #current_data = self.metadata[self.metadata['ftu_type'].str.match(ftu)]
+
+        # Getting the labels that can be applied to the cluster plot
+        cell_types = list(self.wsi.geojson_ftus['features'][0]['properties']['Main_Cell_Types'].keys())
+        if self.current_ftu=='glomerulus':
+            available_labels = ['Cluster','image_id','Area','Mesangial Area','Mesangial Fraction']+cell_types
+        elif self.current_ftu == 'Tubules':
+            available_labels = ['Cluster','image_id','Average TBM Thickness','Average Cell Thickness','Luminal Fraction']+cell_types
+
         current_data = []
         for f in self.metadata:
             if 'ftu_type' in f:
@@ -1551,9 +1593,12 @@ class SlideHeatVis:
             try:
                 label_data = [i['Main_Cell_Types'][label] for i in current_data]
             except:
-                # Need to add something here for using cell states as a label
-                label_data = [i['Cell_States'] for i in current_data]
-
+                label_data = []
+                for i in current_data:
+                    if label in i:
+                        label_data.append(i[label])
+                    else:
+                        label_data.append(np.nan)
 
         graph_df = pd.DataFrame({'x':plot_data_x,'y':plot_data_y,'ID':custom_data,'Label':label_data})
 
@@ -1562,7 +1607,7 @@ class SlideHeatVis:
             margin=dict(l=0,r=0,t=0,b=0)
         )
 
-        return cluster_graph
+        return cluster_graph, available_labels
 
     def grab_image(self,sample_info):
 
@@ -1703,13 +1748,13 @@ def app(*args):
         slide_name = slide_names[0]
 
         slide_url = 'http://localhost:5000/rgb/'+slide_info_dict[slide_name]["key_name"]+'/{z}/{x}/{y}.png?r=B04&r_range=[46,168]&g=B03&g_range=[46,168]&b=B02&b_range=[46,168]&'
-        ftu_path = base_dir+'SpotNet_NonEssential_Files/CellAnnotations_GeoJSON/'+slide_name.replace('.svs','_scaled_add_add.geojson')
+        ftu_path = base_dir+'SpotNet_NonEssential_Files/CellAnnotations_GeoJSON/test/With_Features/'+slide_name.replace('.svs','_scaled_add_add.geojson')
         spot_path = base_dir+'SpotNet_NonEssential_Files/CellAnnotations_GeoJSON/'+slide_name.replace('.svs','_Spots_scaled.geojson')
         cell_graphics_path = 'graphic_reference.json'
         asct_b_path = 'Kidney_v1.2 - Kidney_v1.2.csv'
 
         #metadata_path = './assets/cluster_metadata/'
-        metadata_paths = [base_dir+'SpotNet_NonEssential_Files/CellAnnotations_GeoJSON/'+s.replace('.svs','_scaled_add_add.geojson') for s in list(slide_info_dict.keys())]
+        metadata_paths = [base_dir+'SpotNet_NonEssential_Files/CellAnnotations_GeoJSON/test/With_Features/'+s.replace('.svs','_scaled_add_add.geojson') for s in slide_names]
 
     elif run_type == 'web' or run_type=='AWS':
         # For test deployment
@@ -1731,7 +1776,7 @@ def app(*args):
         asct_b_path = base_dir+'Kidney_v1.2 - Kidney_v1.2.csv'
 
         #metadata_path = base_dir+'assets/cluster_metadata/'
-        metadata_paths = [slide_info_path+s.replace('.svs','_scaled_add_add.geojson') for s in list(slide_info_dict.keys())]
+        metadata_paths = [slide_info_path+s.replace('.svs','_scaled_add_add.geojson') for s in slide_names]
     
     # Adding slide paths to the slide_info_dict
     for slide,path in zip(slide_names,available_slides):
@@ -1755,7 +1800,7 @@ def app(*args):
         # This will not include any of the geometries data which would be the majority
         for f in current_geojson['features']:
             metadata.append(f['properties'])
-
+        
     # Adding ASCT+B table to files
     asct_b_table = pd.read_csv(asct_b_path,skiprows=list(range(10)))
 

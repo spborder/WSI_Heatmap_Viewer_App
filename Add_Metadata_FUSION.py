@@ -282,7 +282,7 @@ def main():
             
             for idx,slide in enumerate(slide_id):
                 print(slide)
-                current_annotations = CurrentAnnotations(current_ann_path = current_metas[idx],wsi_dims_data = None)
+                current_annotations = CurrentAnnotations(current_ann_path = current_metas[idx],wsi_dims_data = slide_info_dict[slide+'.svs'])
 
                 if extra_labels is None:
                     meta_df = pd.read_csv(add_meta_path.replace('*',slide))
@@ -293,7 +293,7 @@ def main():
                         {
                             'polygon':{
                                 'type':'box',
-                                'coords': [i['y1'],i['x1'],i['y2'],i['x2']]
+                                'coords': [[i['y1'],i['x1']],[i['y2'],i['x2']]]
                             },
                             'meta_labels': {j:k for j,k in i.items() if j not in ignore_columns}
                         }
