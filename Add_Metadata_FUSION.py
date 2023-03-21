@@ -172,8 +172,8 @@ class CurrentAnnotations:
                         struct_idx, ftu_idx = self.find_aligning_index(intersect_ftu)
 
                         for l in m['meta_labels']:
-                            if l not in self.current_json_poly[struct_idx]['elements'][ftu_idx]:
-                                self.current_json_poly[struct_idx]['elements'][ftu_idx][l] = m['meta_labels'][l]
+                            if l not in self.current_json_poly[struct_idx]['elements'][ftu_idx]['user']:
+                                self.current_json_poly[struct_idx]['elements'][ftu_idx]['user'][l] = m['meta_labels'][l]
                 else:
                     print(f'Intersection area: {m_poly.intersection(self.current_ftus[intersect_ftu]).area/m_poly.area}')
 
@@ -198,7 +198,7 @@ class CurrentAnnotations:
 def main():
 
     # Add a '*' to reference more than one metadata
-    current_meta_path = '/mnt/c/Users/Sam/Desktop/HIVE/SpotNet_NonEssential_Files/CellAnnotations_Histomics/test/*_add_add.json'
+    current_meta_path = '/mnt/c/Users/Sam/Desktop/HIVE/SpotNet_NonEssential_Files/CellAnnotations_GeoJSON/test/*_add_add.geojson'
     
     if '*' in current_meta_path:
         current_metas = glob(current_meta_path)
@@ -206,9 +206,9 @@ def main():
         current_metas = current_meta_path
 
     # slide_id used for separating data for each slide to add to the slide-specific annotations file
-    add_meta_path = '/mnt/c/Users/Sam/Desktop/HIVE/FFPE/Feature Files/*.csv'
+    add_meta_path = '/mnt/c/Users/Sam/Desktop/HIVE/FFPE/Feature Files/*_AllFeatures.csv'
     slide_id = ['XY01_IU-21-015F','XY02_IU-21-016F','XY03_IU-21-019F','XY04_IU-21-020F']
-    extra_labels = ['_arteries','_gloms','_s_gloms','_tubs']
+    extra_labels = None
     ignore_columns = ['x1','x2','y1','y2','Min_x_coord','Min_y_coord','Max_x_coord','Max_y_coord']
     poly_type = 'box'
 
@@ -285,7 +285,7 @@ def main():
                 current_annotations = CurrentAnnotations(current_ann_path = current_metas[idx],wsi_dims_data = None)
 
                 if extra_labels is None:
-                    meta_df = pd.read_csv(add_meta_path.replace('*',slide),index_col=0)
+                    meta_df = pd.read_csv(add_meta_path.replace('*',slide))
                     add_meta_data_list = meta_df.to_dict('records')
 
                     # Do the same kinda thing as with JSON since there'll probably be columns for bbox coords

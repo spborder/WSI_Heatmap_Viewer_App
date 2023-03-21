@@ -114,20 +114,20 @@ def gen_layout(cell_types,slides_available, center_point, map_dict, spot_dict):
         children = [
             #dbc.CardHeader("Description and Instructions"),
             dbc.CardBody([
-                dbc.Button("Hide Instructions",id='collapse-descrip',className='mb-3',color='primary',n_clicks=0),
+                dbc.Button("View/Hide Description",id='collapse-descrip',className='mb-3',color='primary',n_clicks=0),
                 dbc.Collapse(
                     dbc.Row(
                         dbc.Col(
                             html.Div(
                                 id = 'descrip',
                                 children = [
-                                    html.P('Click within the thumbnail image to drop a square ROI over that point to view in full resolution.'),
+                                    html.P('FUSION was designed by the members of the CMI Lab at the University of Florida in collaboration with HuBMAP'),
                                     html.Hr(),
-                                    html.P('Click within the Whole Slide Image Viewer for fine adjustments in current ROI'),
+                                    html.P('We hope that this tool provides users with an immersive visualization method for understanding the roles of specific cell types in combination with different functional tissue units'),
                                     html.Hr(),
-                                    html.P('Select a specific cell type to adjust overlaid heatmap visualization'),
+                                    html.P('As this tool is still under active development, we welcome any and all feedback. Use the "User Survey" link above to provide comments. Thanks!'),
                                     html.Hr(),
-                                    html.P('Heatmaps can be generated on a whole ROI basis (using overlapping patches), spot basis (showing raw spot cell type proportions), or on a per-Functional Tissue Unit (FTU) basis showing aggregated cell types for overlapping spots')
+                                    html.P('Happy fusing!')
                                 ],style={'fontSize':10}
                             )
                         )
@@ -167,7 +167,6 @@ def gen_layout(cell_types,slides_available, center_point, map_dict, spot_dict):
     )
     
     # View of WSI
-    # Under development, full WSI view take as input a dict of {structure_name: {geojson:geojson, id:id, bounds_color:color, hover_color:color}}
     wsi_view = dbc.Card([
         dbc.CardHeader('Whole Slide Image Viewer'),
         dbc.Row([
@@ -266,6 +265,8 @@ def gen_layout(cell_types,slides_available, center_point, map_dict, spot_dict):
                         id = 'cell-hierarchy',
                         layout={'name':'preset'},
                         style = {'width':'100%','height':'400px'},
+                        minZoom = 1,
+                        maxZoom = 3,
                         stylesheet=cyto_style,
                         elements = [
                             {'data': {'id': 'one', 'label': 'Node 1'}, 'position': {'x': 75, 'y': 75}},
@@ -296,10 +297,60 @@ def gen_layout(cell_types,slides_available, center_point, map_dict, spot_dict):
     cluster_card = dbc.Card([
         dbc.Row([
             dbc.Col([
+                dbc.Card(
+                    id= 'plot-options',
+                    children = [
+                        dbc.CardHeader('Plot Options'),
+                        dbc.CardBody([
+                            dbc.Row([
+                                dbc.Col(dbc.Label('Functional Tissue Unit Type',html_for='ftu-select'),md=4),
+                                dbc.Col([
+                                    html.Div(
+                                        dcc.Dropdown(
+                                            ftu_list,
+                                            ftu_list[0],
+                                            id='ftu-select'
+                                        )
+                                    )],md=8
+                                )
+                            ]),
+                            html.B(),
+                            dbc.Row([
+                                dbc.Col(dbc.Label('Type of plot',html_for='plot-select'),md=4),
+                                dbc.Col([
+                                    html.Div(
+                                        dcc.Dropdown(
+                                            plot_types,
+                                            plot_types[0],
+                                            id='plot-select'
+                                        )
+                                    )],md=8
+                                )
+                            ]),
+                            html.B(),
+                            dbc.Row([
+                                dbc.Col(dbc.Label('Sample Labels',html_for='label-select'),md=4),
+                                dbc.Col([
+                                    html.Div(
+                                        dcc.Dropdown(
+                                            labels,
+                                            labels[0],
+                                            id='label-select'
+                                        )
+                                    )],md=8
+                                )
+                            ])
+                        ])
+                    ]
+                )
+            ],md=12)
+        ]),
+        dbc.Row([
+            dbc.Col([
                 html.Div(
                     dcc.Graph(id='cluster-graph',figure=go.Figure())
                 )
-            ],md=4),
+            ],md=6),
             dbc.Col([
                 dcc.Tabs([
                     dcc.Tab(
@@ -321,63 +372,19 @@ def gen_layout(cell_types,slides_available, center_point, map_dict, spot_dict):
                                 dcc.Loading(
                                     id='loading-data',
                                     children = [
-                                        dcc.Graph(id='selected-cell-types',figure=go.Figure()),
-                                        dcc.Graph(id='selected-cell-states',figure=go.Figure())
+                                        dbc.Row(
+                                            children = [
+                                                dbc.Col(dcc.Graph(id='selected-cell-types',figure=go.Figure())),
+                                                dbc.Col(dcc.Graph(id='selected-cell-states',figure=go.Figure()))
+                                            ]
+                                        )
                                     ]
                                 )
                             ]
                         ),label='Selected Cell Data')
                 ]),
                 html.Div(id='selected-image-info')
-            ],md=4),
-            dbc.Col([
-                dbc.Card(
-                    id= 'plot-options',
-                    children = [
-                        dbc.CardHeader('Plot Options'),
-                        dbc.CardBody([
-                            dbc.Label('Functional Tissue Unit Type',html_for='ftu-select'),
-                            dbc.Row([
-                                dbc.Col(
-                                    html.Div(
-                                        dcc.Dropdown(
-                                            ftu_list,
-                                            ftu_list[0],
-                                            id='ftu-select'
-                                        )
-                                    )
-                                )
-                            ]),
-                            html.B(),
-                            dbc.Label('Type of plot',html_for='plot-select'),
-                            dbc.Row([
-                                dbc.Col(
-                                    html.Div(
-                                        dcc.Dropdown(
-                                            plot_types,
-                                            plot_types[0],
-                                            id='plot-select'
-                                        )
-                                    )
-                                )
-                            ]),
-                            html.B(),
-                            dbc.Label('Sample Labels',html_for='plot-select'),
-                            dbc.Row([
-                                dbc.Col(
-                                    html.Div(
-                                        dcc.Dropdown(
-                                            labels,
-                                            labels[0],
-                                            id='label-select'
-                                        )
-                                    )
-                                )
-                            ])
-                        ])
-                    ]
-                )
-            ],md=4)
+            ],md=6),
         ],align='center')
     ])
 
@@ -457,12 +464,10 @@ def gen_layout(cell_types,slides_available, center_point, map_dict, spot_dict):
             html.B(),
             dbc.Row(
                 id="app-content",
-                children=[wsi_view]
-            ),
-            html.B(),
-            dbc.Row(
-                id='tab-info',
-                children = [dbc.Col(tools,md=12)]
+                children=[
+                    dbc.Col(wsi_view,md=6),
+                    dbc.Col(tools,md=6)
+                ]
             )
         ],fluid=True)
     ])
@@ -850,13 +855,13 @@ class SlideHeatVis:
             [Input('glom-bounds','click_feature'),
             Input('spot-bounds','click_feature'),
             Input('tub-bounds','click_feature'),
-            Input('art-bounds','click_feature')],
+            Input('art-bounds','click_feature'),
+            Input('mini-drop','value')],
             prevent_initial_call=True
         )(self.get_click)
 
         self.app.callback(
-            [Output('collapse-content','is_open'),
-            Output('collapse-descrip','children')],
+            Output('collapse-content','is_open'),
             [Input('collapse-descrip','n_clicks'),
             Input('collapse-descrip','children')],
             [State('collapse-content','is_open')],
@@ -908,13 +913,9 @@ class SlideHeatVis:
             self.app.run_server(host = '0.0.0.0',debug=False,use_reloader=False,port=8000)
 
     def view_instructions(self,n,text,is_open):
-        if text == 'View Instructions':
-            new_text = 'Hide Instructions'
-        else:
-            new_text = 'View Instructions'
         if n:
-            return [not is_open,new_text]
-        return [is_open,new_text]
+            return [not is_open]
+        return [is_open]
     
     def update_roi_pie(self,zoom,viewport,bounds):
 
@@ -1239,12 +1240,29 @@ class SlideHeatVis:
 
         return hover_text
     
-    def get_click(self,glom_click,spot_click,tub_click,art_click):
+    def get_click(self,glom_click,spot_click,tub_click,art_click,mini_specs):
 
-        if 'glom-bounds.click_feature' in ctx.triggered_prop_ids:
-            if not glom_click is None:
-                chart_coords = np.mean(np.squeeze(glom_click['geometry']['coordinates']),axis=0)
-                chart_dict_data = glom_click['properties']['Main_Cell_Types']
+        if not mini_specs == 'None':
+            if 'glom-bounds.click_feature' in ctx.triggered_prop_ids:
+                click_data = glom_click
+            elif 'spot-bounds.click_feature' in ctx.triggered_prop_ids:
+                click_data = spot_click
+            elif 'tub-bounds.click_feature' in ctx.triggered_prop_ids:
+                click_data = tub_click
+            elif 'art-bounds.click_feature' in ctx.triggered_prop_ids:
+                click_data = art_click
+            else:
+                click_data = None
+            
+            if not click_data is None:
+                chart_coords = np.mean(np.squeeze(click_data['geometry']['coordinates']),axis=0)
+                chart_dict_data = click_data['properties']
+
+                if mini_specs == 'All Main Cell Types':
+                    chart_dict_data = chart_dict_data['Main_Cell_Types']
+                else:
+                    chart_dict_data = chart_dict_data['Cell_States'][self.current_cell]
+
                 chart_labels = list(chart_dict_data.keys())
                 chart_data = [chart_dict_data[j] for j in chart_labels]
 
@@ -1259,73 +1277,7 @@ class SlideHeatVis:
                         height=100,
                         width=100,
                         labelMinSize=2,
-                        type='pie',id=f'glom_pie_click{random.randint(0,1000)}')
-
-                    return [mini_pie_chart]
-
-        if 'tub-bounds.click_feature' in ctx.triggered_prop_ids:
-            if not tub_click is None:
-                chart_coords = np.mean(np.squeeze(tub_click['geometry']['coordinates']),axis=0)
-                chart_dict_data = tub_click['properties']['Main_Cell_Types']
-                chart_labels = list(chart_dict_data.keys())
-                chart_data = [chart_dict_data[j] for j in chart_labels]
-
-                if not all([i==j for i,j in zip(chart_coords,self.current_chart_coords)]):
-                    self.current_chart_coords = chart_coords
-
-                    mini_pie_chart = dl.Minichart(
-                        data = chart_data, 
-                        labels = chart_labels, 
-                        lat=chart_coords[1],
-                        lon=chart_coords[0],
-                        height=100,
-                        width=100,
-                        labelMinSize=2,
-                        type='pie',id=f'tub_pie_click{random.randint(0,1000)}')
-
-                    return [mini_pie_chart]
-
-        if 'spot-bounds.click_feature' in ctx.triggered_prop_ids:
-            if not spot_click is None:
-                chart_coords = np.mean(np.squeeze(spot_click['geometry']['coordinates']),axis=0)
-                chart_dict_data = spot_click['properties']['Main_Cell_Types']
-                chart_labels = list(chart_dict_data.keys())
-                chart_data = [chart_dict_data[j] for j in chart_labels]
-
-                if not all([i==j for i,j in zip(chart_coords,self.current_chart_coords)]):
-                    self.current_chart_coords = chart_coords
-
-                    mini_pie_chart = dl.Minichart(
-                        data = chart_data, 
-                        labels = chart_labels, 
-                        lat=chart_coords[1],
-                        lon=chart_coords[0],
-                        height=100,
-                        width=100,
-                        labelMinSize=2,
-                        type='pie',id=f'spot_pie_click{random.randint(0,1000)}')
-
-                    return [mini_pie_chart]
-
-        if 'art-bounds.click_feature' in ctx.triggered_prop_ids:
-            if not art_click is None:
-                chart_coords = np.mean(np.squeeze(art_click['geometry']['coordinates']),axis=0)
-                chart_dict_data = art_click['properties']['Main_Cell_Types']
-                chart_labels = list(chart_dict_data.keys())
-                chart_data = [chart_dict_data[j] for j in chart_labels]
-
-                if not all([i==j for i,j in zip(chart_coords,self.current_chart_coords)]):
-                    self.current_chart_coords = chart_coords
-
-                    mini_pie_chart = dl.Minichart(
-                        data = chart_data, 
-                        labels = chart_labels, 
-                        lat=chart_coords[1],
-                        lon=chart_coords[0],
-                        height=100,
-                        width=100,
-                        labelMinSize=2,
-                        type='pie',id=f'art_pie_click{random.randint(0,1000)}')
+                        type='pie',id=f'pie_click{random.randint(0,1000)}')
 
                     return [mini_pie_chart]
              
