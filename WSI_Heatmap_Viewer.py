@@ -193,7 +193,7 @@ def gen_layout(cell_types,slides_available, center_point, map_dict, spot_dict):
                                 name = 'Spots', checked = False, id = 'Initial_Spots')
                         ]
                     )
-                ], style={'width': '85%', 'height': '80vh', 'margin': "auto", "display": "block"}, id = 'slide-map')
+                ], style={'width': '85%', 'height': '80vh', 'margin': "auto", "display": "inline-block"}, id = 'slide-map')
             )
         ]),
         dbc.Row([html.Div(id='current-hover')])
@@ -399,7 +399,7 @@ def gen_layout(cell_types,slides_available, center_point, map_dict, spot_dict):
     ])
 
     # Tools for selecting regions, transparency, and cells
-    cell_types+=['Max Cell Type','Morphometrics Clusters']
+    cell_types+=['Max Cell Type','Morphometrics Clusters','Area','Mesangial Area','Mesangial Fraction','Arterial Area','Luminal Fraction','Average TBM Thickness','Average Cell Thickness']
     mini_options = ['All Main Cell Types','Cell States for Current Cell Type','None']
     tools = [
         dbc.Card(
@@ -413,7 +413,7 @@ def gen_layout(cell_types,slides_available, center_point, map_dict, spot_dict):
                             html.Div(
                                 id = 'cell-select-div',
                                 children=[
-                                    dcc.Dropdown(cell_types,cell_types[0],id='cell-drop')
+                                    dcc.Dropdown(cell_types,id='cell-drop')
                                 ]
                             )
                         ],md=6),
@@ -477,7 +477,7 @@ def gen_layout(cell_types,slides_available, center_point, map_dict, spot_dict):
                 children=[
                     dbc.Col(wsi_view,md=6),
                     dbc.Col(tools,md=6)
-                ]
+                ],style={"height":"100vh"}
             )
         ],fluid=True)
     ])
@@ -500,6 +500,15 @@ class WholeSlide:
         self.slide_bounds = self.slide_info_dict['bounds']
         self.slide_name = slide_name
         self.slide_path = self.slide_info_dict['slide_path']
+
+        self.morphometrics_list = ['Area','Mesangial Area','Mesangial Fraction','Luminal Fraction','Arterial Area','Average TBM Thickness','Average Cell Thickness']
+
+        # More print statements:
+        """
+        print(f'Slide Name in WholeSlide: {self.slide_name}')
+        print(f'FTU Path in WholeSlide: {self.ftu_path}')
+        print(f'Image URL in WholeSlide: {self.image_url}')
+        """
 
         # Efficiency test (grouping together ftus and spots into boxes with 50 structures in each)
         self.group_n = 50
@@ -611,6 +620,10 @@ class WholeSlide:
             ftu_polys[p]['cell_states'] = []
             ftu_polys[p]['Cluster'] = []
 
+            # Adding morphometrics
+            for m in self.morphometrics_list:
+                ftu_polys[p][m] = []
+
             ftu_groups[p] = []
             group_count = 0
             group_bounds = []
@@ -636,20 +649,32 @@ class WholeSlide:
                 ftu_polys[p]['barcodes'].append(i['properties']['label'])
                 ftu_polys[p]['main_counts'].append(i['properties']['Main_Cell_Types'])
                 ftu_polys[p]['cell_states'].append(i['properties']['Cell_States'])
-                
+
                 if 'Cluster' in i['properties']:
-                    ftu_polys[p]['Cluster'].append(i['properties']['Cluster'])
+                    ftu_polys[p]['Cluster'].append(float(i['properties']['Cluster']))
+
+                for m in self.morphometrics_list:
+                    if m in i['properties']:
+                        ftu_polys[p][m].append(i['properties'][m])
+                    else:
+                        ftu_polys[p][m].append(0)
 
                 # Adding group info to the group list for a given ftu
                 if group_count==self.group_n-1:
-                    ftu_groups[p].append({
+
+                    group_dict = {
                         'box':shapely.geometry.box(*group_bounds),
                         'polygons':ftu_polys[p]['polygons'],
                         'barcodes':ftu_polys[p]['barcodes'],
                         'main_counts':ftu_polys[p]['main_counts'],
                         'cell_states':ftu_polys[p]['cell_states'],
                         'Cluster':ftu_polys[p]['Cluster']
-                        })
+                    }
+
+                    for m in self.morphometrics_list:
+                        group_dict[m] = ftu_polys[p][m]
+
+                    ftu_groups[p].append(group_dict)
 
                     # resetting back to empty/0
                     ftu_polys[p]['polygons'] = []
@@ -661,15 +686,20 @@ class WholeSlide:
                     group_count = 0
                     group_bounds = []
 
-            # Getting the last group which will have length < self.group_n
-            ftu_groups[p].append({
+            # Adding last group
+            group_dict = {
                 'box':shapely.geometry.box(*group_bounds),
                 'polygons':ftu_polys[p]['polygons'],
                 'barcodes':ftu_polys[p]['barcodes'],
                 'main_counts':ftu_polys[p]['main_counts'],
                 'cell_states':ftu_polys[p]['cell_states'],
                 'Cluster':ftu_polys[p]['Cluster']
-            })
+            }
+
+            for m in self.morphometrics_list:
+                group_dict[m] = ftu_polys[p][m]
+
+            ftu_groups[p].append(group_dict)
 
         return ftu_groups
 
@@ -749,10 +779,13 @@ class SlideHeatVis:
         # clustering related properties (and also cell types, cell states, image_ids, etc.)
         self.metadata = cluster_metadata
 
-        self.slide_list = list(slide_info_dict.keys())
-        self.slide_paths = [slide_info_dict[i]['slide_path'] for i in self.slide_list]
         self.slide_info_dict = slide_info_dict
         self.wsi = wsi
+
+        # More print statements:
+        print(f'Slide name in SlideHeatVis: {self.wsi.slide_name}')
+        print(f'Image URL in SlideHeatVis: {self.wsi.image_url}')
+        print(f'FTU path in SlideHeatVis: {self.wsi.ftu_path}')
 
         self.cell_graphics_key = json.load(open(cell_graphics_key))
         # Inverting the graphics key to get {'full_name':'abbreviation'}
@@ -777,6 +810,7 @@ class SlideHeatVis:
 
         self.current_ftu_layers = ['Glomeruli','Tubules','Arterioles']
         self.pie_ftu = self.current_ftu_layers[-1]
+        self.pie_chart_order = self.current_ftu_layers.copy()
 
         self.current_chart_coords = [0,0]
 
@@ -801,8 +835,12 @@ class SlideHeatVis:
             const {color_key,current_cell,fillOpacity,ftu_colors} = context.props.hideout;
 
             if (current_cell==='cluster'){
-                var cell_value = feature.properties.Cluster;
-                cell_value = (cell_value).toFixed(1);
+                if (current_cell in feature.properties){
+                    var cell_value = feature.properties.Cluster;
+                    cell_value = (Number(cell_value)).toFixed(1);
+                } else {
+                    cell_value = Number.Nan;
+                }
             } else if (current_cell==='max'){
                 // Extracting all the cell values for a given FTU/Spot
                 var cell_values = feature.properties.Main_Cell_Types;
@@ -822,14 +860,19 @@ class SlideHeatVis:
                 }
                 cell_value = (use_cell_value).toFixed(1);
 
-            } else {
+            } else if (current_cell in feature.properties.Main_Cell_Types){
                 var cell_value = feature.properties.Main_Cell_Types[current_cell];
                 
                 if (cell_value==1) {
-                    cell_value = cell_value.toFixed(1);
+                    cell_value = (cell_value).toFixed(1);
                 } else if (cell_value==0) {
-                    cell_value = cell_value.toFixed(1);
+                    cell_value = (cell_value).toFixed(1);
                 }
+            } else if (current_cell in feature.properties){
+                var cell_value = feature.properties[current_cell];
+
+            } else {
+                var cell_value = Number.Nan;
             }
 
             const fillColor = color_key[cell_value];
@@ -850,7 +893,8 @@ class SlideHeatVis:
 
         self.app.callback(
             [Output('layer-control','children'),Output('colorbar-div','children')],
-            [Input('cell-drop','value'),Input('vis-slider','value')]
+            [Input('cell-drop','value'),Input('vis-slider','value')],
+            prevent_initial_call=True
         )(self.update_cell)
         
         self.app.callback(
@@ -963,27 +1007,64 @@ class SlideHeatVis:
 
         included_ftus = list(intersecting_ftus.keys())
         included_ftus = [i for i in included_ftus if len(intersecting_ftus[i]['polys'])>0]
-        # Making subplots for each 
-        spec_list = [[{'type':'domain','rowspan':len(included_ftus)-1}]]
-        if len(included_ftus)>1:
-            spec_list[0].extend([{'type':'domain'}])
-        if len(included_ftus)>2:
-            for inc_f in range(0,len(included_ftus)-2):
-                spec_list.append([None,{'type':'domain'}])
-        
-        if len(included_ftus)>1:
-            combined_pie = make_subplots(
-                rows = len(included_ftus)-1, cols = 2,
-                subplot_titles = included_ftus,
-                specs = spec_list
-            )
-        else:
-            combined_pie = go.Figure()
 
-        # Iterating through intersecting_ftus and getting combined main cell proportions
-        figs_to_include = []
-        for f in included_ftus:
+        if not len(self.pie_chart_order)==0:
+            self.pie_chart_order = [i for i in self.pie_chart_order if i in included_ftus]
+        else:
+            self.pie_chart_order = included_ftus
+
+        if len(included_ftus)>1:
+            # Making subplots for each 
+            spec_list = [[{'type':'domain','rowspan':len(included_ftus)-1}]]
+            if len(included_ftus)>1:
+                spec_list[0].extend([{'type':'domain'}])
+            if len(included_ftus)>2:
+                for inc_f in range(0,len(included_ftus)-2):
+                    spec_list.append([None,{'type':'domain'}])
             
+            if len(included_ftus)>1:
+                combined_pie = make_subplots(
+                    rows = len(included_ftus)-1, cols = 2,
+                    subplot_titles = included_ftus,
+                    specs = spec_list
+                )
+            else:
+                combined_pie = go.Figure()
+
+            # Iterating through intersecting_ftus and getting combined main cell proportions
+            figs_to_include = []
+            for f in included_ftus:
+                
+                counts_data = pd.DataFrame(intersecting_ftus[f]['main_counts']).sum(axis=0).to_frame()
+                counts_data.columns = [f]
+
+                # Normalizing to sum to 1
+                counts_data[f] = counts_data[f]/counts_data[f].sum()
+                # Only getting the top-5
+                counts_data = counts_data.sort_values(by=f,ascending=False).iloc[0:self.plot_cell_types_n,:]
+                counts_data = counts_data.reset_index()
+                f_pie = px.pie(counts_data,values=f,names='index')
+                figs_to_include.append(f_pie)
+
+            if 'data' in figs_to_include[0]:
+                for trace in range(len(figs_to_include[0]['data'])):
+                    combined_pie.append_trace(figs_to_include[0]['data'][trace],row=1,col=1)
+            else:
+                combined_pie.append_trace(figs_to_include[0],row=1,col=1)
+            
+            for i,figure in enumerate(figs_to_include[1:]):
+                if 'data' in figure:
+                    for trace in range(len(figure['data'])):
+                        combined_pie.append_trace(figure['data'][trace],row=i+1,col=2)
+                else:
+                    combined_pie.append_trace(figure,row=i+1,col=2)
+
+            self.current_pie_chart = combined_pie
+
+        elif len(included_ftus)==1:
+            
+            f = included_ftus[0]
+            # If there is only one FTU Type included:
             counts_data = pd.DataFrame(intersecting_ftus[f]['main_counts']).sum(axis=0).to_frame()
             counts_data.columns = [f]
 
@@ -992,42 +1073,33 @@ class SlideHeatVis:
             # Only getting the top-5
             counts_data = counts_data.sort_values(by=f,ascending=False).iloc[0:self.plot_cell_types_n,:]
             counts_data = counts_data.reset_index()
-            f_pie = px.pie(counts_data,values=f,names='index')
-            figs_to_include.append(f_pie)
+            f_pie = px.pie(counts_data,values=f,names='index',title = f)
 
-        if 'data' in figs_to_include[0]:
-            for trace in range(len(figs_to_include[0]['data'])):
-                combined_pie.append_trace(figs_to_include[0]['data'][trace],row=1,col=1)
+            combined_pie = f_pie
+            self.current_pie_chart = combined_pie
+
+        if len(included_ftus)>=1:
+            # Picking cell + ftu for cell state proportions plot
+            top_cell = counts_data['index'].tolist()[0]
+            pct_states = pd.DataFrame([i[top_cell] for i in intersecting_ftus[f]['states']]).sum(axis=0).to_frame()
+            pct_states = pct_states.reset_index()
+            pct_states.columns = ['Cell State','Proportion']
+            pct_states['Proportion'] = pct_states['Proportion']/pct_states['Proportion'].sum()
+
+            state_bar = go.Figure(px.bar(pct_states,x='Cell State', y = 'Proportion', title = f'Cell State Proportions for:<br><sup>{self.cell_graphics_key[top_cell]["full"]} in:</sup><br><sup>{f}</sup>'))
         else:
-            combined_pie.append_trace(figs_to_include[0],row=1,col=1)
-        
-        if len(included_ftus)>1:
-            for i,figure in enumerate(figs_to_include[1:]):
-                if 'data' in figure:
-                    for trace in range(len(figure['data'])):
-                        combined_pie.append_trace(figure['data'][trace],row=i+1,col=2)
-                else:
-                    combined_pie.append_trace(figure,row=i+1,col=2)
-
-        # Picking cell + ftu for cell state proportions plot
-        top_cell = counts_data['index'].tolist()[0]
-        pct_states = pd.DataFrame([i[top_cell] for i in intersecting_ftus[f]['states']]).sum(axis=0).to_frame()
-        pct_states = pct_states.reset_index()
-        pct_states.columns = ['Cell State','Proportion']
-        pct_states['Proportion'] = pct_states['Proportion']/pct_states['Proportion'].sum()
-
-        state_bar = go.Figure(px.bar(pct_states,x='Cell State', y = 'Proportion', title = f'Cell State Proportions for {self.cell_graphics_key[top_cell]["full"]} in {f}'))
+            combined_pie = go.Figure()
+            self.current_pie_chart = combined_pie
+            state_bar = go.Figure()
 
         return combined_pie, state_bar
 
     def make_new_pie_subplots(self,big_ftu):
 
         # Making the new focus-ftu the first in the list (probably another way to do this)
-        included_ftus = list(self.current_ftus.keys())
-        included_ftus = [i for i in included_ftus if len(self.current_ftus[i]['polys'])>0 and not i==big_ftu]
+        included_ftus = [i for i in self.pie_chart_order if len(self.current_ftus[i]['polys'])>0 and not i==big_ftu]
         included_ftus = [big_ftu]+included_ftus
-        self.current_ftu_layers = [i for i in self.current_ftu_layers if not i == big_ftu]
-        self.current_ftu_layers = [big_ftu]+self.current_ftu_layers
+        self.pie_chart_order = included_ftus
 
         # Re-generating pie-chart subplots with new focus-ftu
         spec_list = [[{'type':'domain','rowspan':len(included_ftus)-1}]]
@@ -1083,18 +1155,25 @@ class SlideHeatVis:
         if not cell_click is None:
             self.pie_cell = cell_click['points'][0]['label']
 
-            if not self.current_ftu_layers[cell_click['points'][0]['curveNumber']] == self.pie_ftu:
-                # Re-generating pie-charts with the new FTU as the left big pie-chart
-                self.pie_ftu = self.current_ftu_layers[cell_click['points'][0]['curveNumber']]
-                new_pie_chart = self.make_new_pie_subplots(self.pie_ftu)
-                self.current_pie_chart = new_pie_chart
+            included_ftus = list(self.current_ftus.keys())
+            non_zero_ftus = [i for i in included_ftus if len(self.current_ftus[i]['polys'])>0]
 
-            else:
+            if len(non_zero_ftus)>1:
+                if not self.pie_chart_order[cell_click['points'][0]['curveNumber']] == self.pie_ftu:
+                    # Re-generating pie-charts with the new FTU as the left big pie-chart
+                    self.pie_ftu = self.pie_chart_order[cell_click['points'][0]['curveNumber']]
+                    new_pie_chart = self.make_new_pie_subplots(self.pie_ftu)
+                    self.current_pie_chart = new_pie_chart
+
+                else:
+                    new_pie_chart = self.current_pie_chart
+
+            elif len(non_zero_ftus)==1:
                 new_pie_chart = self.current_pie_chart
+                self.pie_ftu = non_zero_ftus[0]
 
         else:
             self.pie_cell = self.current_cell
-            self.pie_ftu = self.current_ftu_layers[-1]
 
             new_pie_chart = self.make_new_pie_subplots(self.pie_ftu)
             self.current_pie_chart = new_pie_chart
@@ -1104,12 +1183,13 @@ class SlideHeatVis:
         pct_states.columns = ['Cell State', 'Proportion']
         pct_states['Proportion'] = pct_states['Proportion']/pct_states['Proportion'].sum()
 
-        state_bar = go.Figure(px.bar(pct_states,x='Cell State', y = 'Proportion', title = f'Cell State Proportions for {self.cell_graphics_key[self.pie_cell]["full"]} in {self.pie_ftu}'))
+        state_bar = go.Figure(px.bar(pct_states,x='Cell State', y = 'Proportion', title = f'Cell State Proportions for:<br><sup>{self.cell_graphics_key[self.pie_cell]["full"]} in:</sup><br><sup>{self.pie_ftu}</sup>'))
+
 
         return state_bar, new_pie_chart
     
     def update_hex_color_key(self,color_type):
-
+        
         # Iterate through all structures (and spots) in current wsi,
         # concatenate all of their proportions of specific cell types together
         # scale it with self.color_map (make sure to multiply by 255 after)
@@ -1142,7 +1222,18 @@ class SlideHeatVis:
                 for g in self.wsi.ftus[f]:
                     if 'Cluster' in g:
                         cluster_label = g['Cluster']
-                        raw_values_list.append(cluster_label)
+                        raw_values_list.extend([float(i) for i in cluster_label])
+            print(np.unique(raw_values_list))
+            
+        else:
+            # For specific morphometrics
+            for f in self.wsi.ftus:
+                for g in self.wsi.ftus[f]:
+                    if color_type in g:
+                        morpho_value = g[color_type]
+                        raw_values_list.extend([float(i) for i in morpho_value if float(i)>0])
+            
+            print(np.unique(raw_values_list))
 
         raw_values_list = np.unique(raw_values_list)
         # Converting to RGB
@@ -1161,29 +1252,42 @@ class SlideHeatVis:
     def update_cell(self,cell_val,vis_val):
         
         # Updating current cell prop
-        if not cell_val in ['Morphometrics Clusters','Max Cell Type','Cell Type States']:
+        if cell_val in self.cell_names_key:
             self.current_cell = self.cell_names_key[cell_val]
             self.update_hex_color_key('cell_value')
 
-            color_bar = dl.Colorbar(colorscale = list(self.hex_color_key.values()),width=600,height=10,position='bottomleft')
+            color_bar = dl.Colorbar(colorscale = list(self.hex_color_key.values()),width=600,height=10,position='bottomleft',id=f'colorbar{random.randint(0,100)}')
         
         elif cell_val == 'Max Cell Type':
             self.update_hex_color_key('max_cell')
             self.current_cell = 'max'
 
             cell_types = list(self.wsi.geojson_ftus['features'][0]['properties']['Main_Cell_Types'].keys())
-            color_bar = dlx.categorical_colorbar(categories = cell_types, colorscale = list(self.hex_color_key.values()),width=600,height=10,position='bottomleft')
+            color_bar = dlx.categorical_colorbar(categories = cell_types, colorscale = list(self.hex_color_key.values()),width=600,height=10,position='bottomleft',id=f'colorbar{random.randint(0,100)}')
         
-        elif cell_val == 'Morphometric Clusters':
+        elif cell_val == 'Morphometrics Clusters':
             self.update_hex_color_key('cluster')
             self.current_cell = 'cluster'
 
-            color_bar = dlx.categorical_colorbar(categories = list(self.hex_color_key.keys()),colorscale = list(self.hex_color_key.values()),width=600,height=10,position='bottomleft')
+            color_bar = dl.Colorbar(colorscale = list(self.hex_color_key.values()),width=600,height=10,position='bottomleft',id=f'colorbar{random.randint(0,100)}')
         
+        else:
+            # Used for morphometrics values
+            self.current_cell = 'morpho'
+            self.update_hex_color_key(cell_val)
+
+            color_bar = dl.Colorbar(colorscale = list(self.hex_color_key.values()),width=600,height=10,position='bottomleft',id=f'colorbar{random.randint(0,100)}')
+
         self.cell_vis_val = vis_val/100
 
         vis_val = vis_val/100
 
+        # More print statements:
+        """
+        print(f'Slide name in update_cell: {self.wsi.slide_name}')
+        print(f'Image URL in update_cell: {self.wsi.image_url}')
+        print(f'FTU path in update_cell: {self.wsi.ftu_path}')
+        """
         # Changing fill and fill-opacity properties for structures and adding that as a property
 
         map_dict = {
@@ -1254,7 +1358,7 @@ class SlideHeatVis:
 
     def get_hover(self,glom_hover,spot_hover,tub_hover,art_hover):
 
-        if not self.current_cell in ['max','cluster']:
+        if not self.current_cell in self.cell_names_key:
             hover_text = ''
             if 'glom-bounds.hover_feature' in ctx.triggered_prop_ids:
                 if not glom_hover is None:
@@ -1602,9 +1706,9 @@ class SlideHeatVis:
 
         graph_df = pd.DataFrame({'x':plot_data_x,'y':plot_data_y,'ID':custom_data,'Label':label_data})
 
-        cluster_graph = go.Figure(px.scatter(graph_df,x='x',y='y',custom_data=['ID'],color='Label'))
+        cluster_graph = go.Figure(px.scatter(graph_df,x='x',y='y',custom_data=['ID'],color='Label',title=f'{plot} Plot of:<br><sup>{ftu} Morphometrics</sup><br><sup>Labeled by {label}</sup>'))
         cluster_graph.update_layout(
-            margin=dict(l=0,r=0,t=0,b=0)
+            margin=dict(l=0,r=0,t=80,b=0)
         )
 
         return cluster_graph, available_labels
@@ -1680,10 +1784,18 @@ class SlideHeatVis:
 
         state_data[f'Cell States for {first_cell}'] = state_data[f'Cell States for {first_cell}']/state_data[f'Cell States for {first_cell}'].sum()
 
-        s_bar = px.bar(state_data, x='Cell States', y = f'Cell States for {first_cell}', title = f'Cell States for {self.cell_graphics_key[first_cell]["full"]} in selected points')
+        s_bar = px.bar(state_data, x='Cell States', y = f'Cell States for {first_cell}', title = f'Cell States for:<br><sup>{self.cell_graphics_key[first_cell]["full"]} in:</sup><br><sup>selected points</sup>')
         
         selected_cell_types = go.Figure(f_pie)
         selected_cell_states = go.Figure(s_bar)
+
+        selected_cell_states.update_layout(
+            margin=dict(l=0,r=0,t=85,b=0)
+        )
+        selected_cell_types.update_layout(
+            margin=dict(l=0,r=0,t=0,b=0),
+            showlegend=False
+        )
 
         return selected_image, selected_cell_types, selected_cell_states
     
@@ -1695,9 +1807,14 @@ class SlideHeatVis:
         state_data.columns = ['Cell States',f'Cell States for {cell_type}']
         state_data[f'Cell States for {cell_type}'] = state_data[f'Cell States for {cell_type}']/state_data[f'Cell States for {cell_type}'].sum()
 
-        s_bar = px.bar(state_data, x='Cell States', y = f'Cell States for {cell_type}', title = f'Cell States for {self.cell_graphics_key[cell_type]["full"]} in selected points')
-        
-        return go.Figure(s_bar)
+        s_bar = px.bar(state_data, x='Cell States', y = f'Cell States for {cell_type}', title = f'Cell States for:<br><sup>{self.cell_graphics_key[cell_type]["full"]} in:</sup><br><sup>selected points</sup>')
+        s_bar = go.Figure(s_bar)
+
+        s_bar.update_layout(
+            margin=dict(l=0,r=0,t=85,b=0)
+        )
+
+        return s_bar
 
 
 
@@ -1734,27 +1851,26 @@ def app(*args):
     except:
         print(f'Using {run_type} run type')
 
-    """
+    
     print(f'Using {run_type} run type')
     print(f'Current working directory is: {os.getcwd()}')
     print(f'Contents of current working directory is: {os.listdir(os.getcwd())}')
-    """
+    
     if run_type == 'local':
         # For local testing
         base_dir = '/mnt/c/Users/Sam/Desktop/HIVE/'
 
-        available_slides = glob(base_dir+'FFPE/*.svs')
+        available_slides = sorted(glob(base_dir+'FFPE/*.svs'))
         slide_names = [i.split('/')[-1] for i in available_slides]
         slide_name = slide_names[0]
 
         slide_url = 'http://localhost:5000/rgb/'+slide_info_dict[slide_name]["key_name"]+'/{z}/{x}/{y}.png?r=B04&r_range=[46,168]&g=B03&g_range=[46,168]&b=B02&b_range=[46,168]&'
-        ftu_path = base_dir+'SpotNet_NonEssential_Files/CellAnnotations_GeoJSON/test/With_Features/'+slide_name.replace('.svs','_scaled_add_add.geojson')
-        spot_path = base_dir+'SpotNet_NonEssential_Files/CellAnnotations_GeoJSON/'+slide_name.replace('.svs','_Spots_scaled.geojson')
+        ftu_path = base_dir+'SpotNet_NonEssential_Files/WSI_Heatmap_Viewer_App/assets/slide_info/'+slide_name.replace('.svs','_scaled.geojson')
+        spot_path = base_dir+'SpotNet_NonEssential_Files/WSI_Heatmap_Viewer_App/assets/slide_info/'+slide_name.replace('.svs','_Spots_scaled.geojson')
         cell_graphics_path = 'graphic_reference.json'
         asct_b_path = 'Kidney_v1.2 - Kidney_v1.2.csv'
 
-        #metadata_path = './assets/cluster_metadata/'
-        metadata_paths = [base_dir+'SpotNet_NonEssential_Files/CellAnnotations_GeoJSON/test/With_Features/'+s.replace('.svs','_scaled_add_add.geojson') for s in slide_names]
+        metadata_paths = [base_dir+'SpotNet_NonEssential_Files/WSI_Heatmap_Viewer_App/assets/slide_info/'+s.replace('.svs','_scaled.geojson') for s in slide_names]
 
     elif run_type == 'web' or run_type=='AWS':
         # For test deployment
@@ -1765,18 +1881,20 @@ def app(*args):
             base_dir = os.getcwd()
             slide_info_path = base_dir+'assets/slide_info/'
 
-        available_slides = glob(slide_info_path+'*.svs')
+        available_slides = sorted(glob(slide_info_path+'*.svs'))
         slide_names = [i.split('/')[-1] for i in available_slides]
         slide_name = slide_names[0]
 
+        print(f'Available slides: {available_slides}')
+        print(f'Slide names: {slide_names}')
+
         slide_url = f'{os.environ.get("TILE_SERVER_HOST")}/rgb/'+slide_info_dict[slide_name]['key_name']+'/{z}/{x}/{y}.png?r=B04&r_range=[46,168]&g=B03&g_range=[46,168]&b=B02&b_range=[46,168]&'
         spot_path = slide_info_path+slide_name.replace('.svs','_Spots_scaled.geojson')
-        ftu_path = slide_info_path+slide_name.replace('.svs','_scaled_add_add.geojson')
+        ftu_path = slide_info_path+slide_name.replace('.svs','_scaled.geojson')
         cell_graphics_path = base_dir+'graphic_reference.json'
         asct_b_path = base_dir+'Kidney_v1.2 - Kidney_v1.2.csv'
 
-        #metadata_path = base_dir+'assets/cluster_metadata/'
-        metadata_paths = [slide_info_path+s.replace('.svs','_scaled_add_add.geojson') for s in slide_names]
+        metadata_paths = [slide_info_path+s.replace('.svs','_scaled.geojson') for s in slide_names]
     
     # Adding slide paths to the slide_info_dict
     for slide,path in zip(slide_names,available_slides):
@@ -1804,8 +1922,12 @@ def app(*args):
     # Adding ASCT+B table to files
     asct_b_table = pd.read_csv(asct_b_path,skiprows=list(range(10)))
 
-    #wsi = Slide(slide_path,spot_path,counts_path,ftu_path,ann_ids,counts_def_path)
     wsi = WholeSlide(slide_url,slide_name,slide_info_dict[slide_name],ftu_path,spot_path)
+
+    # printing stuff
+    print(f'Current WSI name: {slide_name}')
+    print(f'Current FTU path: {ftu_path}')
+    print(f'Current slide url: {slide_url}')
 
     external_stylesheets = [dbc.themes.LUX]
 
@@ -1813,30 +1935,23 @@ def app(*args):
     current_slide_bounds = slide_info_dict[slide_name]['bounds']
     center_point = [(current_slide_bounds[1]+current_slide_bounds[3])/2,(current_slide_bounds[0]+current_slide_bounds[2])/2]
     
-    # Getting map_dict and spot_dict for overlays
-    with open(ftu_path) as f:
-        geojson_polys = geojson.load(f)
-
-    with open(spot_path) as f:
-        spot_geojson_polys = geojson.load(f)
-
     map_dict = {
         'url':wsi.image_url,
         'FTUs':{
             'Glomeruli': {
-                'geojson':{'type':'FeatureCollection', 'features': [i for i in geojson_polys['features'] if i['properties']['structure']=='Glomeruli']},
+                'geojson':{'type':'FeatureCollection', 'features': [i for i in wsi.geojson_ftus['features'] if i['properties']['structure']=='Glomeruli']},
                 'id': 'glom-bounds',
                 'color': '#390191',
                 'hover_color':'#666'
             },
             'Tubules': {
-                'geojson':{'type':'FeatureCollection', 'features': [i for i in geojson_polys['features'] if i['properties']['structure']=='Tubules']},
+                'geojson':{'type':'FeatureCollection', 'features': [i for i in wsi.geojson_ftus['features'] if i['properties']['structure']=='Tubules']},
                 'id':'tub-bounds',
                 'color': '#e71d1d',
                 'hover_color': '#ff0b0a'
             },
             'Arterioles': {
-                'geojson':{'type':'FeatureCollection', 'features': [i for i in geojson_polys['features'] if i['properties']['structure']=='Arterioles']},
+                'geojson':{'type':'FeatureCollection', 'features': [i for i in wsi.geojson_ftus['features'] if i['properties']['structure']=='Arterioles']},
                 'id':'art-bounds',
                 'color': '#b6d7a8',
                 'hover_color': '#50f207'
@@ -1845,7 +1960,7 @@ def app(*args):
     }
 
     spot_dict = {
-        'geojson':spot_geojson_polys,
+        'geojson':wsi.geojson_spots,
         'id': 'spot-bounds',
         'color': '#dffa00',
         'hover_color':'#9caf00'

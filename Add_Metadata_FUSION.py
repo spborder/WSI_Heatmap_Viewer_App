@@ -128,7 +128,10 @@ class CurrentAnnotations:
 
                     edited_coords = []
                     for k in m['polygon']['coords']:
-                        edited_coords.extend([k])
+                        if len(k)==1:
+                            edited_coords.append(k)
+                        elif len(k)==2:
+                            edited_coords.extend(k)
 
                     m_poly = shapely.geometry.box(*edited_coords)
 
@@ -149,33 +152,40 @@ class CurrentAnnotations:
 
             # If there is more than one intersection than only assign metadata to largest percentage area intersection?
             if len(intersect_list)>1:
-                intersect_areas = [m_poly.intersection(self.current_ftus[i]).area/m_poly.area for i in intersect_list]
-                intersect_ftu = intersect_list[np.argmax(intersect_areas)]
+                # Finding intersection between current metadata bounding box and bounding boxes of intersecting FTUs
+                intersect_areas = [m_poly.intersection(shapely.geometry.box(*list(self.current_ftus[i].bounds))).area/m_poly.area for i in intersect_list]
+                # Finding the ftu with the largest percentage overlap
+                if any([i>=0.8 for i in intersect_areas]):
+                    intersect_ftu = intersect_list[np.argmax(intersect_areas)]
+                else:
+                    intersect_ftu = None
+
             elif len(intersect_list)==1:
-                intersect_ftu = intersect_list[0]
+                if m_poly.intersection(shapely.geometry.box(*list(self.current_ftus[intersect_list[0]].bounds))).area/m_poly.area >= 0.8:
+                    intersect_ftu = intersect_list[0]
+                else:
+                    intersect_ftu = None
 
             # If there is an overlapping ftu with this metadata object
-            if not len(intersect_list) == 0:
-                # If the overlap between the metadata object and the intersect ftu is greater than 75% of metadata object area
-                if m_poly.area>=self.current_ftus[intersect_ftu].area:
-                    # In this case intersect_ftu is just an index for the current ftus
-                    # Now, just add the meta_labels data to that index in self.current_json_poly
-                    if self.ann_type == 'geojson':
-                        if not 'properties' in self.current_json_poly['features'][intersect_ftu]:
-                            self.current_json_poly['features'][intersect_ftu]['properties'] = m['meta_labels']
-                        else:
-                            for l in m['meta_labels']:
-                                if not l in self.current_json_poly['features'][intersect_ftu]['properties']:
-                                    self.current_json_poly['features'][intersect_ftu]['properties'][l] = m['meta_labels'][l]
-                    
-                    elif self.ann_type == 'histomics':
-                        struct_idx, ftu_idx = self.find_aligning_index(intersect_ftu)
-
+            if not intersect_ftu is None:
+                # Now, just add the meta_labels data to that index in self.current_json_poly
+                if self.ann_type == 'geojson':
+                    if not 'properties' in self.current_json_poly['features'][intersect_ftu]:
+                        self.current_json_poly['features'][intersect_ftu]['properties'] = m['meta_labels']
+                    else:
                         for l in m['meta_labels']:
-                            if l not in self.current_json_poly[struct_idx]['elements'][ftu_idx]['user']:
-                                self.current_json_poly[struct_idx]['elements'][ftu_idx]['user'][l] = m['meta_labels'][l]
-                else:
-                    print(f'Intersection area: {m_poly.intersection(self.current_ftus[intersect_ftu]).area/m_poly.area}')
+                            if not l in self.current_json_poly['features'][intersect_ftu]['properties']:
+                                self.current_json_poly['features'][intersect_ftu]['properties'][l] = m['meta_labels'][l]
+                
+                elif self.ann_type == 'histomics':
+                    struct_idx, ftu_idx = self.find_aligning_index(intersect_ftu)
+
+                    for l in m['meta_labels']:
+                        if l not in self.current_json_poly[struct_idx]['elements'][ftu_idx]['user']:
+                            self.current_json_poly[struct_idx]['elements'][ftu_idx]['user'][l] = m['meta_labels'][l]
+            else:
+                print('No intersecting FTUs')
+                print(m['meta_labels'])
 
     def save_metadata(self,save_path):
 
@@ -195,10 +205,10 @@ class CurrentAnnotations:
         return struct_idx,idx
 
 
-def main():
+def main(meta_args):
 
     # Add a '*' to reference more than one metadata
-    current_meta_path = '/mnt/c/Users/Sam/Desktop/HIVE/SpotNet_NonEssential_Files/CellAnnotations_GeoJSON/test/*_add_add.geojson'
+    current_meta_path = meta_args['metadata_path']
     
     if '*' in current_meta_path:
         current_metas = glob(current_meta_path)
@@ -206,104 +216,78 @@ def main():
         current_metas = current_meta_path
 
     # slide_id used for separating data for each slide to add to the slide-specific annotations file
-    add_meta_path = '/mnt/c/Users/Sam/Desktop/HIVE/FFPE/Feature Files/*_AllFeatures.csv'
-    slide_id = ['XY01_IU-21-015F','XY02_IU-21-016F','XY03_IU-21-019F','XY04_IU-21-020F']
-    extra_labels = None
-    ignore_columns = ['x1','x2','y1','y2','Min_x_coord','Min_y_coord','Max_x_coord','Max_y_coord']
-    poly_type = 'box'
+    add_meta_path = meta_args['add_meta_path']
+    slide_id = meta_args['slide_id']
+    extra_labels = meta_args['extra_labels']
+    if extra_labels == []:
+        extra_labels = None
+    ignore_columns = meta_args['ignore_columns']
+    poly_type = meta_args['poly_type']
 
-    slide_info_dict = {
-        'XY01_IU-21-015F.svs':{
-            'key_name':'XY01IU21015F',
-            'bounds':[-121.4887696318595,0.0,-121.29151201587271,0.19456360965996605],
-            'wsi_dims':[22012,21566]
-        },
-        'XY02_IU-21-016F.svs':{
-            'key_name':'XY02IU21016F',
-            'bounds':[-121.48876728121257,0.0,-121.29107290809065,0.18546976820936942],
-            'wsi_dims':[22061,20558]
-        },
-        'XY03_IU-21-019F.svs':{
-            'key_name':'XY03IU21019F',
-            'bounds':[-121.48876962947176,0.0,-121.29142240206029,0.19455461087467554],
-            'wsi_dims':[22022,21565]
-        },
-        'XY04_IU-21-020F.svs':{
-            'key_name':'XY04IU21020F',
-            'bounds':[-121.48876962708414,0.0,-121.29123421301975,0.19454563737274247],
-            'wsi_dims':[22043,21564]
-        }
-    }
+    slide_info_dict = meta_args['slide_info_dict']
 
-    # Have to first parse the metadata into slide-dictionaries 
-    if 'json' in add_meta_path:
-        if not 'geojson' in add_meta_path:
-            with open(add_meta_path) as f:
-                all_add_meta_dict = json.load(f)
-        else:
-            with open(add_meta_path) as f:
-                all_add_meta_dict = geojson.load(f)
+    if slide_info_dict == []:
+        slide_info_dict = None
 
-        # Creating the add_meta_list
-        if not slide_id is None:
-            # TODO: make this slide_id thing also apply to geojson files, not sure how conversion to dataframes works with those because the metadata would be a bit more nested
-            meta_frame = pd.DataFrame.from_dict(all_add_meta_dict,orient='index')
 
-            for slide in meta_frame[slide_id].unique():
-                slide_metadata = meta_frame[meta_frame[slide_id].str.match(slide)]
-                add_meta_data_list = slide_metadata.to_dict('records')
+    for slide_id_idx,meta in enumerate(add_meta_path):
 
-                if poly_type == 'box':
-                    add_metadata = [
-                        {
-                            'polygon':{
-                                'type':'box',
-                                'coords': [[i['Min_x_coord'], i['Min_y_coord']],[i['Max_x_coord'],i['Max_y_coord']]]
-                            },
-                            'meta_labels':i
-                        }
-                        for i in add_meta_data_list
-                    ]
-                else:
-                    print('need to add functionality here')
+        slide_id_id = slide_id[slide_id_idx] 
+        # Have to first parse the metadata into slide-dictionaries 
+        if 'json' in meta:
+            if not 'geojson' in meta:
+                with open(meta) as f:
+                    all_add_meta_dict = json.load(f)
+            else:
+                with open(meta) as f:
+                    all_add_meta_dict = geojson.load(f)
 
-                #try:
-                current_annotations = CurrentAnnotations(current_ann_path = [i for i in current_metas if slide in i][0],wsi_dims_data=slide_info_dict[slide+'.svs'])
-                current_annotations.add_metadata(add_metadata)
-                current_annotations.save_metadata([i for i in current_metas if slide in i][0].replace('.geojson','_add.geojson'))
-                #except IndexError:
-                #   print(f'Slide not included: {slide}')
-                #   continue
+            # Creating the add_meta_list
+            if not slide_id_id is None:
+                # TODO: make this slide_id_id thing also apply to geojson files, not sure how conversion to dataframes works with those because the metadata would be a bit more nested
+                meta_frame = pd.DataFrame.from_dict(all_add_meta_dict,orient='index')
 
-    elif 'csv' in add_meta_path:
+                for slide in meta_frame[slide_id_id].unique():
+                    slide_metadata = meta_frame[meta_frame[slide_id_id].str.match(slide)]
+                    add_meta_data_list = slide_metadata.to_dict('records')
+                    print(f'Number of objects in: {slide}: {len(add_meta_data_list)}')
+                    if poly_type == 'box':
+                        add_metadata = [
+                            {
+                                'polygon':{
+                                    'type':'box',
+                                    'coords': [[i['Min_x_coord'], i['Min_y_coord']],[i['Max_x_coord'],i['Max_y_coord']]]
+                                },
+                                'meta_labels':i
+                            }
+                            for i in add_meta_data_list
+                        ]
+                    else:
+                        print('need to add functionality here')
 
-        # This is for feature files from Nick
-        if type(slide_id)==list:
-            
-            for idx,slide in enumerate(slide_id):
-                print(slide)
-                current_annotations = CurrentAnnotations(current_ann_path = current_metas[idx],wsi_dims_data = slide_info_dict[slide+'.svs'])
-
-                if extra_labels is None:
-                    meta_df = pd.read_csv(add_meta_path.replace('*',slide))
-                    add_meta_data_list = meta_df.to_dict('records')
-
-                    # Do the same kinda thing as with JSON since there'll probably be columns for bbox coords
-                    add_metadata = [
-                        {
-                            'polygon':{
-                                'type':'box',
-                                'coords': [[i['y1'],i['x1']],[i['y2'],i['x2']]]
-                            },
-                            'meta_labels': {j:k for j,k in i.items() if j not in ignore_columns}
-                        }
-                        for i in add_meta_data_list
-                    ]
+                    if not slide_info_dict is None:
+                        current_annotations = CurrentAnnotations(current_ann_path = [i for i in current_metas if slide in i][0],wsi_dims_data=slide_info_dict[slide+'.svs'])
+                    else:
+                        current_annotations = CurrentAnnotations(current_ann_path = [i for i in current_metas if slide in i][0])
 
                     current_annotations.add_metadata(add_metadata)
-                else:
-                    for e in extra_labels:
-                        meta_df = pd.read_csv(add_meta_path.replace('*',slide+e))
+                    current_annotations.save_metadata([i for i in current_metas if slide in i][0])
+
+
+        elif 'csv' in meta:
+
+            # This is for feature files from Nick
+            if type(slide_id_id)==list:
+                
+                for idx,slide in enumerate(slide_id_id):
+                    print(slide)
+                    if not slide_info_dict is None:
+                        current_annotations = CurrentAnnotations(current_ann_path = current_metas[idx],wsi_dims_data = slide_info_dict[slide+'.svs'])
+                    else:
+                        current_annotations = CurrentAnnotations(current_ann_path = current_metas[idx])
+
+                    if extra_labels is None:
+                        meta_df = pd.read_csv(meta.replace('*',slide))
                         add_meta_data_list = meta_df.to_dict('records')
 
                         # Do the same kinda thing as with JSON since there'll probably be columns for bbox coords
@@ -311,16 +295,39 @@ def main():
                             {
                                 'polygon':{
                                     'type':'box',
-                                    'coords': [i['y1'],i['x1'],i['y2'],i['x2']]
+                                    'coords': [[i['y1'],i['x1']],[i['y2'],i['x2']]]
                                 },
                                 'meta_labels': {j:k for j,k in i.items() if j not in ignore_columns}
                             }
                             for i in add_meta_data_list
                         ]
 
-                        current_annotations.add_metadata(add_metadata)            
+                        current_annotations.add_metadata(add_metadata)
+                    else:
+                        for e in extra_labels:
+                            meta_df = pd.read_csv(meta.replace('*',slide+e))
+                            add_meta_data_list = meta_df.to_dict('records')
 
-                current_annotations.save_metadata(current_metas[idx].replace('test','test/With_Features'))
+                            # Do the same kinda thing as with JSON since there'll probably be columns for bbox coords
+                            add_metadata = [
+                                {
+                                    'polygon':{
+                                        'type':'box',
+                                        'coords': [i['y1'],i['x1'],i['y2'],i['x2']]
+                                    },
+                                    'meta_labels': {j:k for j,k in i.items() if j not in ignore_columns}
+                                }
+                                for i in add_meta_data_list
+                            ]
+
+                            current_annotations.add_metadata(add_metadata)            
+
+                    current_annotations.save_metadata(current_metas[idx])
 
 if __name__=='__main__':
-    main()
+
+    # Reading JSON file with parameters:
+    meta_args = sys.argv[-1]
+    meta_args = json.load(open(meta_args))
+
+    main(meta_args)

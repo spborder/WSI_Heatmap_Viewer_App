@@ -1,7 +1,6 @@
 {
     "PT":{
         "graphic":"./assets/cell_graphics/pt_graphic.svg",
-        "hierarchy":"./assets/cell_graphics/pt_hierarchy.PNG",
         "full":"Proximal Tubule",
         "subtypes":["PT","PT-S1","PT-S2","PT-S3","aPT","cycPT","dPT","dPT/DTL"],
         "states":["reference","reference","reference","reference","altered","cycling","degenerative","degenerative"],
@@ -10,7 +9,6 @@
     },
     "DTL":{
         "graphic":"./assets/cell_graphics/dtl_graphic.png",
-        "hierarchy":"./assets/cell_graphics/dtl_hierarchy.PNG",
         "full":"Descending Thin Limb",
         "subtypes":["DTL","DTL1","DTL2","DTL3","dDTL3"],
         "states":["reference","reference","reference","reference","degenerative"],
@@ -19,7 +17,6 @@
     },
     "ATL":{
         "graphic":"./assets/cell_graphics/atl_graphic.png",
-        "hierarchy":"./assets/cell_graphics/atl_hierarchy.PNG",
         "full":"Ascending Thin Limb",
         "subtypes":["ATL","dATL"],
         "states":["reference","degenerative"],
@@ -28,7 +25,6 @@
     },
     "TAL":{
         "graphic":"./assets/cell_graphics/tal_graphic.jfif",
-        "hierarchy":"./assets/cell_graphics/tal_hierarchy.PNG",
         "full":"Thick Ascending Limb",
         "subtypes":["TAL","aTAL1","aTAL2","M-TAL","dM-TAL","C-TAL","dC-TAL","MD"],
         "states":["reference","altered","altered","reference","degenerative","reference","degenerative","reference"],
@@ -37,7 +33,6 @@
     },
     "DCT":{
         "graphic":"./assets/cell_graphics/dct_graphic.jpg",
-        "hierarchy":"./assets/cell_graphics/dct_hierarchy.PNG",
         "full":"Distal Convoluted Tubule",
         "subtypes":["DCT","DCT1","DCT2","dDCT","cycDCT"],
         "states":["reference","reference","reference","degenerative","cycling"],
@@ -46,7 +41,6 @@
     },
     "CNT":{
         "graphic":"./assets/cell_graphics/cnt_graphic.png",
-        "hierarchy":"./assets/cell_graphics/cnt_hierarchy.PNG",
         "full":"Connecting Tubule",
         "subtypes":["CNT","CNT-PC","dCNT","cycCNT"],
         "states":["reference","reference","degenerative","cycling"],
@@ -55,7 +49,6 @@
     },
     "PC":{
         "graphic":"./assets/cell_graphics/pc_graphic.png",
-        "hierarchy":"./assets/cell_graphics/pc_hierarchy.PNG",
         "full":"Principal Cell",
         "subtypes":["PC","C-PC","CCD-PC","OMCD-PC","M-PC","dOMCD-PC","dM-PC","IMCD","dIMCD"],
         "states":["reference","reference","reference","reference","reference","degenerative","degenerative","reference","degenerative"],
@@ -64,7 +57,6 @@
     },
     "IC":{
         "graphic":"./assets/cell_graphics/ic_graphic.png",
-        "hierarchy":"./assets/cell_graphics/ic_hierarchy.PNG",
         "full":"Intercalated Cell",
         "subtypes":["IC","C-IC-A","CCD-IC-A","CNT-IC-A","dC-IC-A","OMCD-IC-A","M-IC-A","tPC-IC","IC-B"],
         "states":["reference","reference","reference","reference","degenerative","reference","reference","transitioning","reference"],
@@ -73,7 +65,6 @@
     },
     "PapE":{
         "graphic":"",
-        "hierarchy":"./assets/cell_graphics/pape_hierarchy.PNG",
         "full":"Papillary Tip Epithelial",
         "subtypes":["PapE"],
         "states":["reference"],
@@ -82,7 +73,6 @@
     },
     "POD":{
         "graphic":"./assets/cell_graphics/podocyte-graphic.svg",
-        "hierarchy":"./assets/cell_graphics/podocyte_hierarchy.png",
         "full":"Podocyte",
         "subtypes":["POD","dPOD"],
         "states":["reference","degenerative"],
@@ -91,7 +81,6 @@
     },
     "PEC":{
         "graphic":"./assets/cell_graphics/pec_graphic.PNG",
-        "hierarchy":"./assets/cell_graphics/pec_hierarchy.PNG",
         "full":"Parietal Epithelial Cell",
         "subtypes":["PEC"],
         "states":["reference"],
@@ -100,7 +89,6 @@
     },
     "EC":{
         "graphic":"./assets/cell_graphics/ec_graphic.jpg",
-        "hierarchy":"./assets/cell_graphics/ec_hierarchy.PNG",
         "full":"Endothelial Cell",
         "subtypes":["EC","EC-GC","EC-AEA","EC-DVR","EC-PTC","dEC-PTC","EC-AVR","dEC","cycEC","EC-LYM"],
         "states":["reference","reference","reference","reference","reference","degenerative","reference","degenerative","cycling","reference"],
@@ -109,7 +97,6 @@
     },
     "VSM/P":{
         "graphic":"./assets/cell_graphics/vsmp_graphic.png",
-        "hierarchy":"./assets/cell_graphics/vsmp_hierarchy.PNG",
         "full":"Vascular Smooth Muscle Cell / Pericyte",
         "subtypes":["VSM/P","MC","REN","VSMC","VSMC/P","dVSMC"],
         "states":["reference","reference","reference","reference","reference","degenerative"],
@@ -118,7 +105,6 @@
     },
     "FIB":{
         "graphic":"./assets/cell_graphics/fib_graphic.PNG",
-        "hierarchy":"./assets/cell_graphics/fib_hierarchy.PNG",
         "full":"Fibroblast",
         "subtypes":["FIB","MYOF","cycMYOF","M-FIB","dM-FIB","aFIB","dFIB"],
         "states":["reference","reference","reference","reference","degenerative","altered","degenerative"],
@@ -127,7 +113,6 @@
     },
     "IMM":{
         "graphic":"./assets/cell_graphics/imm_graphic.PNG",
-        "hierarchy":"",
         "full":"Immune Cell",
         "subtypes":["IMM","B","PL","T","NKT","MAST","MAC-M2","cycMNP","MDC","cDC","pDC","ncMON","N"],
         "states":["reference","reference","reference","reference","reference","reference","reference","cycling","reference","reference","reference","reference","reference"],
@@ -136,7 +121,6 @@
     },
     "NEU":{
         "graphic":"./assets/cell_graphics/neu_graphic.PNG",
-        "hierarchy":"",
         "full":"Neural Cells",
         "subtypes":["NEU","SC/NEU"],
         "states":["reference","reference"],
