@@ -938,7 +938,7 @@ class SlideHeatVis:
             [Output('slide-tile','url'), Output('layer-control','children'), Output('slide-map','center'),
              Output('roi-pie','figure'),Output('state-bar','figure')],
             Input('slide-select','value'),
-            prevent_initial_call=True
+            prevent_initial_call=False
         )(self.ingest_wsi)
         
         self.app.callback(
