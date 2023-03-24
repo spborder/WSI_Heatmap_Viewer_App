@@ -173,7 +173,7 @@ def gen_layout(cell_types,slides_available, center_point, map_dict, spot_dict):
             html.Div(
                 dl.Map(center = center_point, zoom = 12, minZoom=11, children = [
                     dl.TileLayer(url = map_dict['url'], id = 'slide-tile'),
-                    dl.FeatureGroup([dl.EditControl(id='edit_control')]),
+                    #dl.FeatureGroup([dl.EditControl(id='edit_control')]),
                     dl.LayerGroup(id='mini-label'),
                     html.Div(id='colorbar-div',children = [dl.Colorbar(id='map-colorbar')]),
                     dl.LayersControl(id = 'layer-control', children = 
@@ -400,6 +400,16 @@ def gen_layout(cell_types,slides_available, center_point, map_dict, spot_dict):
 
     # Tools for selecting regions, transparency, and cells
     cell_types+=['Max Cell Type','Morphometrics Clusters','Area','Mesangial Area','Mesangial Fraction','Arterial Area','Luminal Fraction','Average TBM Thickness','Average Cell Thickness']
+    
+    # Converting the cell_types list into a dictionary to disable some
+    disable_list = ['Morphometrics Clusters','Area','Mesangial Area','Mesangial Fraction','Arterial Area','Luminal Fraction','Average TBM Thickness','Average Cell Thickness']
+    cell_types_list = []
+    for c in cell_types:
+        if c not in disable_list:
+            cell_types_list.append({'label':c,'value':c,'disabled':False})
+        else:
+            cell_types_list.append({'label':c+' (In Progress)','value':c,'disabled':True})
+
     mini_options = ['All Main Cell Types','Cell States for Current Cell Type','None']
     tools = [
         dbc.Card(
@@ -413,7 +423,7 @@ def gen_layout(cell_types,slides_available, center_point, map_dict, spot_dict):
                             html.Div(
                                 id = 'cell-select-div',
                                 children=[
-                                    dcc.Dropdown(cell_types,id='cell-drop')
+                                    dcc.Dropdown(cell_types_list,id='cell-drop')
                                 ]
                             )
                         ],md=6),
@@ -937,8 +947,7 @@ class SlideHeatVis:
         self.app.callback(
             [Output('slide-tile','url'), Output('layer-control','children'), Output('slide-map','center'),
              Output('roi-pie','figure'),Output('state-bar','figure')],
-            Input('slide-select','value'),
-            prevent_initial_call=False
+            Input('slide-select','value')
         )(self.ingest_wsi)
         
         self.app.callback(
@@ -971,7 +980,15 @@ class SlideHeatVis:
             Output('selected-cell-states','figure'),
             prevent_initial_call=True
         )(self.update_selected_state_bar)
-       
+
+        """
+        self.app.callback(
+            Input('edit_control','geojson'),
+            Output('layer-control','children'),
+            prevent_initial_call=True
+        )(self.add_manual_roi)
+       """
+        
         # Comment out this line when running on the web
         if self.run_type == 'local':
             self.app.run_server(debug=True,use_reloader=True,port=8000)
@@ -1289,7 +1306,7 @@ class SlideHeatVis:
         print(f'FTU path in update_cell: {self.wsi.ftu_path}')
         """
         # Changing fill and fill-opacity properties for structures and adding that as a property
-
+        """
         map_dict = {
             'url':self.wsi.image_url,
             'FTUs':{
@@ -1339,7 +1356,9 @@ class SlideHeatVis:
                             hoverStyle = arrow_function(dict(weight=5, color = spot_dict['hover_color'], dashArray = '')))),
                     name = 'Spots', checked = False, id = self.wsi.slide_info_dict['key_name']+'_Spots')
             ]
-
+        """
+        new_children = self.current_overlays
+        
         return new_children, color_bar
 
     def update_cell_hierarchy(self,cell_val):
@@ -1657,6 +1676,9 @@ class SlideHeatVis:
 
         center_point = [(self.wsi.slide_bounds[1]+self.wsi.slide_bounds[3])/2,(self.wsi.slide_bounds[0]+self.wsi.slide_bounds[2])/2]
 
+        # Adding the layers to be a property for the edit_control callback
+        self.current_overlays = new_children
+
 
         return new_url, new_children, center_point, new_pie_chart, new_state_bar
 
@@ -1815,6 +1837,40 @@ class SlideHeatVis:
         )
 
         return s_bar
+
+    def add_manual_roi(self,new_geojson):
+        
+        print(new_geojson)
+        if not new_geojson['features'] == []:
+            # New geojson has no properties which can be used for overlays or anything so we have to add those
+            # Step 1, find intersecting spots:
+            overlap_dict = self.wsi.find_intersecting_spots(shape(new_geojson['features'][0]['geometry']))
+            main_counts_data = pd.DataFrame(overlap_dict['main_counts']).sum(axis=0).to_frame()
+            main_counts_data = main_counts_data/main_counts_data.sum()
+            
+            main_counts_dict = main_counts_data.to_dict()[0]
+            agg_cell_states = {}
+            for m_c in list(main_counts_dict.keys()):
+                cell_states = pd.DataFrame([i[m_c] for i in overlap_dict['states']]).sum(axis=0).to_frame()
+                cell_states = cell_states/cell_states.sum()    
+
+                agg_cell_states[m_c] = cell_states.to_dict()[0]
+
+            new_geojson['features'][0]['properties']['Main_Cell_Types'] = main_counts_dict
+            new_geojson['features'][0]['properties']['Cell_States'] = agg_cell_states
+
+            new_child = dl.Overlay(
+                dl.LayerGroup(
+                    dl.GeoJSON(data = new_geojson, id = f'manual_roi{len(self.current_overlays)-3}', options = dict(style=self.ftu_style_handle),
+                        hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = self.cell_vis_val),
+                        hoverStyle = arrow_function(dict(weight=5, color = '#ff737e',dashArray = ''))
+                    )
+                ), name = f'Manual ROI {len(self.current_overlays)-3}', checked = True, id = self.wsi.slide_info_dict['key_name']+f'_manual_roi{len(self.current_overlays)-3}'
+            )
+
+            self.current_overlays.append(new_child)
+
+            return self.current_overlays
 
 
 
