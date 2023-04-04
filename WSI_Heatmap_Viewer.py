@@ -45,732 +45,15 @@ from dash_extensions.enrich import DashProxy, html, Input, Output, MultiplexerTr
 
 from timeit import default_timer as timer
 
+from FUSION_WSI import WholeSlide
+from Initialize_FUSION import DatasetHandler, LayoutHandler
 
-def gen_layout(cell_types,slides_available, center_point, map_dict, spot_dict):
-
-    # Header
-    header = dbc.Navbar(
-        dbc.Container([
-            dbc.Row([
-                dbc.Col(html.Img(id='logo',src=('./assets/Lab_Logo_white.png'),height='75px'),md='auto'),
-                dbc.Col([
-                    html.Div([
-                        html.H3('FUSION'),
-                        html.P('Functional Unit State Identification and Navigation with WSI')
-                    ],id='app-title')
-                ],md=True,align='center')
-            ],align='center'),
-            dbc.Row([
-                dbc.Col([
-                    dbc.NavbarToggler(id='navbar-toggler'),
-                    dbc.Collapse(
-                        dbc.Nav([
-                            dbc.NavItem(
-                                dbc.Button(
-                                    'User Survey',
-                                    id = 'user-survey-button',
-                                    outline = True,
-                                    color = 'primary',
-                                    href = ' https://ufl.qualtrics.com/jfe/form/SV_1A0CcKNLhTnFCHI',
-                                    style = {'textTransform':'none'}
-                                )
-                            ),
-                            dbc.NavItem(
-                                dbc.Button(
-                                    "Cell Cards",
-                                    id='cell-cards-button',
-                                    outline=True,
-                                    color="primary",
-                                    href="https://cellcards.org/index.php",
-                                    style={"textTransform":"none"}
-                                )
-                            ),
-                            dbc.NavItem(
-                                dbc.Button(
-                                    "Lab Website",
-                                    id='lab-web-button',
-                                    outline=True,
-                                    color='primary',
-                                    href='https://cmilab.nephrology.medicine.ufl.edu',
-                                    style={"textTransform":"none"}
-                                )
-                            )
-                        ],navbar=True),
-                    id="navbar-collapse",
-                    navbar=True)
-                ],
-                md=2)
-                ],
-            align='center')
-            ], fluid=True),
-        dark=True,
-        color="dark",
-        sticky="top",
-        style={'marginBottom':'20px'}
-    )
-
-    # Description and instructions card
-    description = dbc.Card(
-        children = [
-            #dbc.CardHeader("Description and Instructions"),
-            dbc.CardBody([
-                dbc.Button("View/Hide Description",id='collapse-descrip',className='mb-3',color='primary',n_clicks=0),
-                dbc.Collapse(
-                    dbc.Row(
-                        dbc.Col(
-                            html.Div(
-                                id = 'descrip',
-                                children = [
-                                    html.P('FUSION was designed by the members of the CMI Lab at the University of Florida in collaboration with HuBMAP'),
-                                    html.Hr(),
-                                    html.P('We hope that this tool provides users with an immersive visualization method for understanding the roles of specific cell types in combination with different functional tissue units'),
-                                    html.Hr(),
-                                    html.P('As this tool is still under active development, we welcome any and all feedback. Use the "User Survey" link above to provide comments. Thanks!'),
-                                    html.Hr(),
-                                    html.P('Happy fusing!')
-                                ],style={'fontSize':10}
-                            )
-                        )
-                    ),id='collapse-content',is_open=False
-                )
-            ])
-        ],style={'marginBottom':'20px'}
-    )
-    
-    # Slide selection
-    slide_select = dbc.Card(
-        id = 'slide-select-card',
-        children = [
-            dbc.CardHeader("Select case from dropdown menu"),
-            dbc.CardBody([
-                dbc.Row([
-                    dbc.Col(
-                        html.Div(
-                            id = "slide_select-label",
-                            children = [
-                                html.P("Available cases: ")
-                            ]
-                        ),md=4
-                    ),
-                    dbc.Col(
-                        html.Div(
-                            dcc.Dropdown(
-                                slides_available,
-                                slides_available[0],
-                                id = 'slide-select'
-                            )
-                        ), md=8
-                    )
-                ])
-            ])
-        ],style={'marginBottom':'20px'}
-    )
-    
-    # View of WSI
-    wsi_view = dbc.Card([
-        dbc.CardHeader('Whole Slide Image Viewer'),
-        dbc.Row([
-            html.Div(
-                dl.Map(center = center_point, zoom = 12, minZoom=11, children = [
-                    dl.TileLayer(url = map_dict['url'], id = 'slide-tile'),
-                    #dl.FeatureGroup([dl.EditControl(id='edit_control')]),
-                    dl.LayerGroup(id='mini-label'),
-                    html.Div(id='colorbar-div',children = [dl.Colorbar(id='map-colorbar')]),
-                    dl.LayersControl(id = 'layer-control', children = 
-                        [
-                            dl.Overlay(
-                                dl.LayerGroup(
-                                    dl.GeoJSON(data = map_dict['FTUs'][struct]['geojson'], id = map_dict['FTUs'][struct]['id'], options = dict(color = map_dict['FTUs'][struct]['color']),
-                                        hoverStyle = arrow_function(dict(weight=5, color = map_dict['FTUs'][struct]['hover_color'], dashArray = '')))),
-                                name = struct, checked = True, id = 'Initial_'+struct)
-                        for struct in map_dict['FTUs']
-                        ] + 
-                        [
-                            dl.Overlay(
-                                dl.LayerGroup(
-                                    dl.GeoJSON(data = spot_dict['geojson'], id = spot_dict['id'], options = dict(color = spot_dict['color']),
-                                        hoverStyle = arrow_function(dict(weight=5, color = spot_dict['hover_color'], dashArray = '')))),
-                                name = 'Spots', checked = False, id = 'Initial_Spots')
-                        ]
-                    )
-                ], style={'width': '85%', 'height': '80vh', 'margin': "auto", "display": "inline-block"}, id = 'slide-map')
-            )
-        ]),
-        dbc.Row([html.Div(id='current-hover')])
-    ], style = {'marginBottom':'20px'})
-
-    # Cell type proportions and cell state distributions
-    roi_pie = dbc.Card([
-        dbc.CardBody([
-            dbc.Row([
-                dbc.Col([
-                    dbc.Label("ROI Cell Proportions", html_for="roi-pie"),
-                    dcc.Graph(
-                        id="roi-pie",
-                        figure=go.Figure()
-                    ),
-                ],md=6),
-                dbc.Col([
-                    dbc.Label("Selected Cell States",html_for="state-bar"),
-                    dcc.Graph(
-                        id="state-bar",
-                        figure=go.Figure()
-                    )
-                ],md=6)
-            ])
-        ])
-    ])
-
-    # Stylesheet for cyto plot thingy
-    cyto_style = [
-        {
-        'selector':'node',
-        'style':{
-            'label':'data(label)',
-            'width':45,
-            'height':45,
-            'background-color':'white',
-            'background-fit':'cover',
-            'background-clip':'none',
-            'background-image-opacity':1,
-            #'border-opacity':1,
-            #'border-width':2,
-            'background-image':'data(url)',
-            }
-        },
-        {
-        'selector':'edge',
-        'style':{
-            'line-width':35,
-            'line-color':'blue'
-        }
-        }
-    ]
-
-    # Cell card graphic and hierarchy
-    cell_card_types = cell_types.copy()
-    cell_card = dbc.Card([
-        dbc.CardBody([
-            dbc.Row([
-                dbc.Col([dbc.Label('Select a Cell Type to view the Cell Hierarchy')],md=4),
-                dbc.Col([
-                    dcc.Dropdown(
-                        cell_card_types,cell_card_types[0],id='cell-cards-drop'
-                    )
-                ],md=8)
-            ]),
-            dbc.Row([
-                dbc.Col([
-                    dbc.Label("Cell Graphic", html_for="cell-graphic"),
-                    html.Img(
-                        id = 'cell-graphic',
-                        src = './assets/cell_graphics/default_cell_graphic.png',
-                        height = '250px',
-                        width = '500px'
-                    )],md=6),
-                
-                dbc.Col([
-                    dbc.Label("Cell Hierarchy",html_for="cell-hierarchy"),
-                    cyto.Cytoscape(
-                        id = 'cell-hierarchy',
-                        layout={'name':'preset'},
-                        style = {'width':'100%','height':'400px'},
-                        minZoom = 0.5,
-                        maxZoom = 3,
-                        stylesheet=cyto_style,
-                        elements = [
-                            {'data': {'id': 'one', 'label': 'Node 1'}, 'position': {'x': 75, 'y': 75}},
-                            {'data': {'id': 'two', 'label': 'Node 2'}, 'position': {'x': 200, 'y': 200}},
-                            {'data': {'source': 'one', 'target': 'two'}}
-                        ]),
-                    html.Div(id='label-p'),
-                    html.Div(id='id-p'),
-                    html.Div(id='notes-p')
-                    ],md=6)
-            ],align='center')
-        ]),
-        dbc.CardFooter(
-            dbc.Row([
-                dbc.Col([
-                    html.Div([
-                        dcc.Link('Derived from ASCT+B Kidney v1.2',href='https://docs.google.com/spreadsheets/d/1NMfu1bEGNFcTYTFT-jCao_lSbFD8n0ti630iIpRj-hw/edit#gid=949267305')
-                    ])
-                ])
-            ])
-        )
-    ])
-    
-    ftu_list = ['glomerulus','Tubules']
-    plot_types = ['TSNE','UMAP']
-    labels = ['Cluster','image_id']+cell_types.copy()
-    # Cluster viewer tab
-    cluster_card = dbc.Card([
-        dbc.Row([
-            dbc.Col([
-                dbc.Card(
-                    id= 'plot-options',
-                    children = [
-                        dbc.CardHeader('Plot Options'),
-                        dbc.CardBody([
-                            dbc.Row([
-                                dbc.Col(dbc.Label('Functional Tissue Unit Type',html_for='ftu-select'),md=4),
-                                dbc.Col([
-                                    html.Div(
-                                        dcc.Dropdown(
-                                            ftu_list,
-                                            ftu_list[0],
-                                            id='ftu-select'
-                                        )
-                                    )],md=8
-                                )
-                            ]),
-                            html.B(),
-                            dbc.Row([
-                                dbc.Col(dbc.Label('Type of plot',html_for='plot-select'),md=4),
-                                dbc.Col([
-                                    html.Div(
-                                        dcc.Dropdown(
-                                            plot_types,
-                                            plot_types[0],
-                                            id='plot-select'
-                                        )
-                                    )],md=8
-                                )
-                            ]),
-                            html.B(),
-                            dbc.Row([
-                                dbc.Col(dbc.Label('Sample Labels',html_for='label-select'),md=4),
-                                dbc.Col([
-                                    html.Div(
-                                        dcc.Dropdown(
-                                            labels,
-                                            labels[0],
-                                            id='label-select'
-                                        )
-                                    )],md=8
-                                )
-                            ])
-                        ])
-                    ]
-                )
-            ],md=12)
-        ]),
-        dbc.Row([
-            dbc.Col([
-                html.Div(
-                    dcc.Graph(id='cluster-graph',figure=go.Figure())
-                )
-            ],md=6),
-            dbc.Col([
-                dcc.Tabs([
-                    dcc.Tab(
-                        dbc.Card(
-                            id = 'selected-image-card',
-                            children = [
-                                dcc.Loading(
-                                    id = 'loading-image',
-                                    children = [
-                                        dcc.Graph(id='selected-image',figure=go.Figure())
-                                    ]
-                                )
-                            ]
-                        ),label='Selected Images'),
-                    dcc.Tab(
-                        dbc.Card(
-                            id = 'selected-data-card',
-                            children = [
-                                dcc.Loading(
-                                    id='loading-data',
-                                    children = [
-                                        dbc.Row(
-                                            children = [
-                                                dbc.Col(dcc.Graph(id='selected-cell-types',figure=go.Figure())),
-                                                dbc.Col(dcc.Graph(id='selected-cell-states',figure=go.Figure()))
-                                            ]
-                                        )
-                                    ]
-                                )
-                            ]
-                        ),label='Selected Cell Data')
-                ]),
-                html.Div(id='selected-image-info')
-            ],md=6),
-        ],align='center')
-    ])
-
-    # Tools for selecting regions, transparency, and cells
-    cell_types+=['Max Cell Type','Morphometrics Clusters','Area','Mesangial Area','Mesangial Fraction','Arterial Area','Luminal Fraction','Average TBM Thickness','Average Cell Thickness']
-    
-    # Converting the cell_types list into a dictionary to disable some
-    disable_list = ['Morphometrics Clusters','Area','Mesangial Area','Mesangial Fraction','Arterial Area','Luminal Fraction','Average TBM Thickness','Average Cell Thickness']
-    cell_types_list = []
-    for c in cell_types:
-        if c not in disable_list:
-            cell_types_list.append({'label':c,'value':c,'disabled':False})
-        else:
-            cell_types_list.append({'label':c+' (In Progress)','value':c,'disabled':True})
-
-    mini_options = ['All Main Cell Types','Cell States for Current Cell Type','None']
-    tools = [
-        dbc.Card(
-            id='tools-card',
-            children=[
-                dbc.CardHeader("Tools"),
-                dbc.CardBody([
-                    dbc.Row([
-                        dbc.Col([
-                            html.H6("Select Cell for Overlaid Heatmap Viewing",className="cell-select"),
-                            html.Div(
-                                id = 'cell-select-div',
-                                children=[
-                                    dcc.Dropdown(cell_types_list,id='cell-drop')
-                                ]
-                            )
-                        ],md=6),
-                        dbc.Col([
-                            html.H6("Options for Overlaid Minicharts",className='mini-select'),
-                            html.Div(
-                                id='mini-select-div',
-                                children=[
-                                    dcc.Dropdown(mini_options,mini_options[0],id='mini-drop')
-                                ]
-                            )
-                        ])
-                    ]),
-                    html.Hr(),
-                    dbc.Form([
-                        dbc.Row([
-                            dbc.Col([
-                                dbc.Label(
-                                    "Adjust Transparency of Heatmap",
-                                    html_for="vis-slider"
-                                ),
-                                dcc.Slider(
-                                    id='vis-slider',
-                                    min=0,
-                                    max=100,
-                                    step=10,
-                                    value=50
-                                )
-                            ])
-                        ]),
-                        dbc.Row([
-                            dbc.Tabs([
-                                #dbc.Tab(thumbnail_select, label = "Thumbnail ROI"),
-                                dbc.Tab(roi_pie, label = "Cell Composition"),
-                                dbc.Tab(cell_card,label = "Cell Card"),
-                                dbc.Tab(cluster_card,label = 'Morphological Clustering')
-                            ])
-                        ])
-                    ])
-                ])
-            ]
-        )
-    ]
-
-    main_layout = html.Div([
-        header,
-        html.B(),
-        dbc.Container([
-            dbc.Row(
-                id = 'descrip-and-instruct',
-                children = [description]
-            ),
-            html.B(),
-            dbc.Row(
-                id = 'slide-select-row',
-                children = [slide_select]
-            ),
-            html.B(),
-            dbc.Row(
-                id="app-content",
-                children=[
-                    dbc.Col(wsi_view,md=6),
-                    dbc.Col(tools,md=6)
-                ],style={"height":"100vh"}
-            )
-        ],fluid=True)
-    ])
-
-    return main_layout
-
-
-class WholeSlide:
-    def __init__(self,
-                image_url,
-                slide_name,
-                slide_info_dict,
-                ftu_path,
-                spot_path):
-        
-        self.image_url = image_url
-        self.ftu_path = ftu_path
-        self.spot_path = spot_path
-        self.slide_info_dict = slide_info_dict
-        self.slide_bounds = self.slide_info_dict['bounds']
-        self.slide_name = slide_name
-        self.slide_path = self.slide_info_dict['slide_path']
-
-        self.morphometrics_list = ['Area','Mesangial Area','Mesangial Fraction','Luminal Fraction','Arterial Area','Average TBM Thickness','Average Cell Thickness']
-
-        # More print statements:
-        """
-        print(f'Slide Name in WholeSlide: {self.slide_name}')
-        print(f'FTU Path in WholeSlide: {self.ftu_path}')
-        print(f'Image URL in WholeSlide: {self.image_url}')
-        """
-
-        # Efficiency test (grouping together ftus and spots into boxes with 50 structures in each)
-        self.group_n = 50
-
-        # Processing ftus and spots
-        self.ftus = self.process_ftus()
-        self.spots = self.process_spots()
-
-    def process_spots(self):
-
-        with open(self.spot_path) as f:
-            geojson_polys = geojson.load(f)
-
-        self.geojson_spots = geojson_polys
-
-        # Parsing through geojson spots
-        spot_polys = {}
-
-        spot_groups = []
-        group_count = 0
-        group_bounds = []
-
-        spot_polys['polygons'] = []
-        spot_polys['barcodes'] = []
-        spot_polys['main_counts'] = []
-        spot_polys['cell_states'] = []
-
-        for g in geojson_polys['features']:
-
-            group_count+=1
-            current_spot = shape(g['geometry'])
-            current_bounds = list(current_spot.bounds)
-
-            if not group_bounds == []:
-                new_mins = [np.minimum(current_bounds[j],group_bounds[j]) for j in range(0,2)]
-                new_maxs = [np.maximum(current_bounds[j],group_bounds[j]) for j in range(2,4)]
-
-                group_bounds = new_mins+new_maxs
-            else:
-                group_bounds = current_bounds
-
-            spot_polys['polygons'].append(current_spot)
-            spot_polys['barcodes'].append(g['properties']['label'])
-            spot_polys['main_counts'].append(g['properties']['Main_Cell_Types'])
-            spot_polys['cell_states'].append(g['properties']['Cell_States'])
-
-            if group_count==self.group_n-1:
-                
-                spot_groups.append({
-                    'box':shapely.geometry.box(*group_bounds),
-                    'polygons':spot_polys['polygons'],
-                    'barcodes':spot_polys['barcodes'],
-                    'main_counts':spot_polys['main_counts'],
-                    'cell_states':spot_polys['cell_states']
-                })
-
-                spot_polys['polygons'] = []
-                spot_polys['barcodes'] = []
-                spot_polys['main_counts'] = []
-                spot_polys['cell_states'] = []
-                group_count = 0
-                group_bounds = []
-
-        spot_groups.append({
-            'box':shapely.geometry.box(*group_bounds),
-            'polygons':spot_polys['polygons'],
-            'barcodes':spot_polys['barcodes'],
-            'main_counts':spot_polys['main_counts'],
-            'cell_states':spot_polys['cell_states']
-        })
-
-        return spot_groups
-        
-    def process_ftus(self):
-        # Reading files in geojson format
-        with open(self.ftu_path) as f:
-            geojson_polys = geojson.load(f)
-
-        self.geojson_ftus = geojson_polys
-
-        # Parsing through info stored in geojson file
-        ftu_polys = {}
-        poly_ids = []
-        for f in geojson_polys['features']:
-            try:
-                poly_ids.append(f['properties']['label'])
-            except:
-                continue
-
-        poly_names = np.unique([i.split('_')[0] for i in poly_ids])
-        self.ann_ids = {}
-
-        # The difference here between the spots and the ftus is that the ftu groups will be a dictionary for each ftu
-        # This opens it up to being controlled downstream (e.g. if turning off one FTU)
-        ftu_groups = {}
-
-        for p in poly_names:
-            
-            # Just initializing a dictionary format with empty lists
-            self.ann_ids[p] = []
-
-            poly_idx = [i for i in range(len(poly_ids)) if p in poly_ids[i]]
-            p_features = [geojson_polys[i] for i in poly_idx]
-
-            ftu_polys[p] = {}
-            ftu_polys[p]['polygons'] = []
-            ftu_polys[p]['barcodes'] = []
-            ftu_polys[p]['main_counts'] = []
-            ftu_polys[p]['cell_states'] = []
-            ftu_polys[p]['Cluster'] = []
-
-            # Adding morphometrics
-            for m in self.morphometrics_list:
-                ftu_polys[p][m] = []
-
-            ftu_groups[p] = []
-            group_count = 0
-            group_bounds = []
-
-            # Iterating through each polygon in a given FTU
-            for i in p_features:
-
-                group_count+=1
-                current_ftu = shape(i['geometry'])
-                current_bounds = list(current_ftu.bounds)
-
-                # Updating the groups bounding box
-                if not group_bounds == []:
-                    new_mins = [np.minimum(current_bounds[j],group_bounds[j]) for j in range(0,2)]
-                    new_maxs = [np.maximum(current_bounds[j],group_bounds[j]) for j in range(2,4)]
-
-                    group_bounds = new_mins+new_maxs
-                else:
-                    group_bounds = current_bounds
-
-                # Adding info to the dictionary
-                ftu_polys[p]['polygons'].append(current_ftu)
-                ftu_polys[p]['barcodes'].append(i['properties']['label'])
-                ftu_polys[p]['main_counts'].append(i['properties']['Main_Cell_Types'])
-                ftu_polys[p]['cell_states'].append(i['properties']['Cell_States'])
-
-                if 'Cluster' in i['properties']:
-                    ftu_polys[p]['Cluster'].append(float(i['properties']['Cluster']))
-
-                for m in self.morphometrics_list:
-                    if m in i['properties']:
-                        ftu_polys[p][m].append(i['properties'][m])
-                    else:
-                        ftu_polys[p][m].append(0)
-
-                # Adding group info to the group list for a given ftu
-                if group_count==self.group_n-1:
-
-                    group_dict = {
-                        'box':shapely.geometry.box(*group_bounds),
-                        'polygons':ftu_polys[p]['polygons'],
-                        'barcodes':ftu_polys[p]['barcodes'],
-                        'main_counts':ftu_polys[p]['main_counts'],
-                        'cell_states':ftu_polys[p]['cell_states'],
-                        'Cluster':ftu_polys[p]['Cluster']
-                    }
-
-                    for m in self.morphometrics_list:
-                        group_dict[m] = ftu_polys[p][m]
-
-                    ftu_groups[p].append(group_dict)
-
-                    # resetting back to empty/0
-                    ftu_polys[p]['polygons'] = []
-                    ftu_polys[p]['barcodes'] = []
-                    ftu_polys[p]['main_counts'] = []
-                    ftu_polys[p]['cell_states'] = []
-                    ftu_polys[p]['Cluster'] = []
-
-                    group_count = 0
-                    group_bounds = []
-
-            # Adding last group
-            group_dict = {
-                'box':shapely.geometry.box(*group_bounds),
-                'polygons':ftu_polys[p]['polygons'],
-                'barcodes':ftu_polys[p]['barcodes'],
-                'main_counts':ftu_polys[p]['main_counts'],
-                'cell_states':ftu_polys[p]['cell_states'],
-                'Cluster':ftu_polys[p]['Cluster']
-            }
-
-            for m in self.morphometrics_list:
-                group_dict[m] = ftu_polys[p][m]
-
-            ftu_groups[p].append(group_dict)
-
-        return ftu_groups
-
-    def find_intersecting_spots(self,box_poly):
-        
-        # Find intersecting bounding boxes for a given box poly (each box will contain up to self.group_n spots)
-        intersecting_groups = [i for i in range(0,len(self.spots)) if self.spots[i]['box'].intersects(box_poly)]
-
-        # Searching only in intersecting groups for spots that intersect
-        intersect_spots = []
-        intersect_barcodes = []
-        intersect_counts = []
-        intersect_states = []
-        for group_idx in intersecting_groups:
-
-            intersect_idxes = [i for i in range(0,len(self.spots[group_idx]['polygons'])) if self.spots[group_idx]['polygons'][i].intersects(box_poly)]
-            intersect_barcodes.extend([self.spots[group_idx]['barcodes'][i] for i in intersect_idxes])
-            intersect_spots.extend([self.spots[group_idx]['polygons'][i] for i in intersect_idxes])
-            intersect_counts.extend([self.spots[group_idx]['main_counts'][i] for i in intersect_idxes])
-            intersect_states.extend([self.spots[group_idx]['cell_states'][i] for i in intersect_idxes])
-
-        return {'polys':intersect_spots, 'barcodes':intersect_barcodes, 'main_counts':intersect_counts, 'states':intersect_states}    
-
-    def find_intersecting_ftu(self,box_poly,ftu=None):
-
-        intersect_barcodes = []
-        intersect_ftus = []
-        intersect_counts = []
-        intersect_states = []
-
-        if ftu is not None:
-            ftu_list = [ftu]
-        else:
-            ftu_list = self.ann_ids.keys()
-
-        for ann in ftu_list:
-            
-            # Which groups of FTUs intersect with the query box_poly
-            group_intersect = [i for i in range(0,len(self.ftus[ann])) if self.ftus[ann][i]['box'].intersects(box_poly)]
-
-            for g in group_intersect:
-                group_polygons = self.ftus[ann][g]['polygons']
-                group_barcodes = self.ftus[ann][g]['barcodes']
-                group_counts = self.ftus[ann][g]['main_counts']
-                group_states = self.ftus[ann][g]['cell_states']
-
-                # Within group intersections
-                intersect_idxes = [i for i in range(0,len(group_polygons)) if box_poly.intersects(group_polygons[i])]
-
-                intersect_barcodes.extend([group_barcodes[i] for i in intersect_idxes])
-                intersect_ftus.extend([group_polygons[i] for i in intersect_idxes])
-                intersect_counts.extend([group_counts[i] for i in intersect_idxes])
-                intersect_states.extend([group_states[i] for i in intersect_idxes])
-
-        return {'polys':intersect_ftus, 'barcodes':intersect_barcodes, 'main_counts':intersect_counts, 'states':intersect_states}
 
 
 class SlideHeatVis:
     def __init__(self,
                 app,
-                layout,
+                layout_dict,
                 wsi,
                 cell_graphics_key,
                 asct_b_table,
@@ -778,11 +61,18 @@ class SlideHeatVis:
                 slide_info_dict,
                 run_type = None):
                 
+        # Saving all the layouts for this instance
+        self.layout_dict = layout_dict
+        self.current_page = 'welcome'
+
         # Setting some app-related things
         self.app = app
         self.app.title = "FUSION"
-        self.app.layout = layout
+        self.app.layout = self.layout_dict['initial']
         self.app._favicon = './assets/favicon.ico'
+        self.app.validation_layout = html.Div([
+            self.layout_dict[i] for i in self.layout_dict
+        ])
 
         self.run_type = run_type
 
@@ -793,9 +83,11 @@ class SlideHeatVis:
         self.wsi = wsi
 
         # More print statements:
+        """
         print(f'Slide name in SlideHeatVis: {self.wsi.slide_name}')
         print(f'Image URL in SlideHeatVis: {self.wsi.image_url}')
         print(f'FTU path in SlideHeatVis: {self.wsi.ftu_path}')
+        """
 
         self.cell_graphics_key = json.load(open(cell_graphics_key))
         # Inverting the graphics key to get {'full_name':'abbreviation'}
@@ -818,7 +110,7 @@ class SlideHeatVis:
             'Spots':'#dffa00'
         }
 
-        self.current_ftu_layers = ['Glomeruli','Tubules','Arterioles']
+        self.current_ftu_layers = list(self.wsi.ftus.keys())
         self.pie_ftu = self.current_ftu_layers[-1]
         self.pie_chart_order = self.current_ftu_layers.copy()
 
@@ -898,7 +190,8 @@ class SlideHeatVis:
         self.app.callback(
             [Output('roi-pie','figure'),Output('state-bar','figure')],
             [Input('slide-map','zoom'),Input('slide-map','viewport')],
-            State('slide-map','bounds')
+            State('slide-map','bounds'),
+            prevent_initial_call=True
         )(self.update_roi_pie)
 
         self.app.callback(
@@ -909,7 +202,8 @@ class SlideHeatVis:
         
         self.app.callback(
             [Output('cell-graphic','src'),Output('cell-hierarchy','elements')],
-            Input('cell-cards-drop','value')
+            Input('cell-cards-drop','value'),
+            prevent_initial_call=True
         )(self.update_cell_hierarchy)
 
         self.app.callback(
@@ -921,10 +215,10 @@ class SlideHeatVis:
         self.app.callback(
             Output('current-hover','children'),
             [Input('glom-bounds','hover_feature'),
-             Input('spot-bounds','hover_feature'),
-             Input('tub-bounds','hover_feature'),
-             Input('art-bounds','hover_feature')],
-             prevent_initial_call=True
+            Input('spot-bounds','hover_feature'),
+            Input('tub-bounds','hover_feature'),
+            Input('art-bounds','hover_feature')],
+            prevent_initial_call=True
         )(self.get_hover)
 
         self.app.callback(
@@ -938,16 +232,24 @@ class SlideHeatVis:
         )(self.get_click)
 
         self.app.callback(
-            Output('collapse-content','is_open'),
-            Input('collapse-descrip','n_clicks'),
-            [State('collapse-content','is_open')],
+            Output('vis-collapse-content','is_open'),
+            Input('vis-collapse-descrip','n_clicks'),
+            [State('vis-collapse-content','is_open')],
             prevent_initial_call=True
         )(self.view_instructions)
 
         self.app.callback(
+            Output('vis-sidebar-offcanvas','is_open'),
+            Input('vis-sidebar-button','n_clicks'),
+            [State('vis-sidebar-offcanvas','is_open')],
+            prevent_initial_call=True
+        )(self.view_sidebar)
+
+        self.app.callback(
             [Output('slide-tile','url'), Output('layer-control','children'), Output('slide-map','center'),
-             Output('roi-pie','figure'),Output('state-bar','figure')],
-            Input('slide-select','value')
+            Output('roi-pie','figure'),Output('state-bar','figure')],
+            Input('slide-select','value'),
+            prevent_initial_call=True
         )(self.ingest_wsi)
         
         self.app.callback(
@@ -963,7 +265,8 @@ class SlideHeatVis:
             Input('plot-select','value'),
             Input('label-select','value')],
             [Output('cluster-graph','figure'),
-             Output('label-select','options')]
+            Output('label-select','options')],
+            prevent_initial_call=True
         )(self.update_graph)
 
         self.app.callback(
@@ -981,14 +284,19 @@ class SlideHeatVis:
             prevent_initial_call=True
         )(self.update_selected_state_bar)
 
-        """
         self.app.callback(
             Input('edit_control','geojson'),
             Output('layer-control','children'),
             prevent_initial_call=True
         )(self.add_manual_roi)
-       """
         
+        self.app.callback(
+            Output(f'{self.current_page}-container-content','children'),
+            [Input('url','pathname')]
+        )(self.update_page)
+
+        self.update_callbacks()
+
         # Comment out this line when running on the web
         if self.run_type == 'local':
             self.app.run_server(debug=True,use_reloader=True,port=8000)
@@ -1001,6 +309,43 @@ class SlideHeatVis:
             return not is_open
         return is_open
     
+    def view_sidebar(self,n,is_open):
+        if n:
+            return not is_open
+        return is_open
+
+    def update_page(self,pathname):
+        
+        if pathname.replace('/','') in self.layout_dict:
+            
+            self.current_page = pathname.replace('/','')
+            print(self.current_page)
+            self.update_callbacks()
+
+            return self.layout_dict[self.current_page]
+
+    def update_callbacks(self):
+
+        self.app.callback(
+            Output(f'{self.current_page}-container-content','children'),
+            [Input('url','pathname')],
+            prevent_initial_call = True
+        )(self.update_page)
+
+        self.app.callback(
+            Output(f'{self.current_page}-collapse-content','is_open'),
+            Input(f'{self.current_page}-collapse-descrip','n_clicks'),
+            [State(f'{self.current_page}-collapse-content','is_open')],
+            prevent_initial_call=True
+        )(self.view_instructions)
+
+        self.app.callback(
+            Output(f'{self.current_page}-sidebar-offcanvas','is_open'),
+            Input(f'{self.current_page}-sidebar-button','n_clicks'),
+            [State(f'{self.current_page}-sidebar-offcanvas','is_open')],
+            prevent_initial_call=True
+        )(self.view_sidebar)
+
     def update_roi_pie(self,zoom,viewport,bounds):
 
         # Making a box-poly from the bounds
@@ -1220,6 +565,7 @@ class SlideHeatVis:
                 for g in self.wsi.ftus[f]:
                     # get main counts for this ftu
                     ftu_counts = pd.DataFrame(g['main_counts'])[self.current_cell].tolist()
+                    #raw_values_list.extend([float('{:.4f}'.format(round(i,4))) for i in ftu_counts])
                     raw_values_list.extend(ftu_counts)
 
             for g in self.wsi.spots:
@@ -1240,7 +586,7 @@ class SlideHeatVis:
                     if 'Cluster' in g:
                         cluster_label = g['Cluster']
                         raw_values_list.extend([float(i) for i in cluster_label])
-            print(np.unique(raw_values_list))
+            #print(np.unique(raw_values_list))
             
         else:
             # For specific morphometrics
@@ -1250,7 +596,7 @@ class SlideHeatVis:
                         morpho_value = g[color_type]
                         raw_values_list.extend([float(i) for i in morpho_value if float(i)>0])
             
-            print(np.unique(raw_values_list))
+            #print(np.unique(raw_values_list))
 
         raw_values_list = np.unique(raw_values_list)
         # Converting to RGB
@@ -1306,7 +652,7 @@ class SlideHeatVis:
         print(f'FTU path in update_cell: {self.wsi.ftu_path}')
         """
         # Changing fill and fill-opacity properties for structures and adding that as a property
-        """
+        
         map_dict = {
             'url':self.wsi.image_url,
             'FTUs':{
@@ -1356,8 +702,8 @@ class SlideHeatVis:
                             hoverStyle = arrow_function(dict(weight=5, color = spot_dict['hover_color'], dashArray = '')))),
                     name = 'Spots', checked = False, id = self.wsi.slide_info_dict['key_name']+'_Spots')
             ]
-        """
-        new_children = self.current_overlays
+        
+        #new_children = self.current_overlays
         
         return new_children, color_bar
 
@@ -1846,22 +1192,29 @@ class SlideHeatVis:
             # Step 1, find intersecting spots:
             overlap_dict = self.wsi.find_intersecting_spots(shape(new_geojson['features'][0]['geometry']))
             main_counts_data = pd.DataFrame(overlap_dict['main_counts']).sum(axis=0).to_frame()
-            main_counts_data = main_counts_data/main_counts_data.sum()
+            main_counts_data = (main_counts_data/main_counts_data.sum()).fillna(0.000).round(decimals=3)
+
+            main_counts_data[0] = main_counts_data[0].map('{:.4f}'.format)
             
-            main_counts_dict = main_counts_data.to_dict()[0]
+            main_counts_dict = main_counts_data.astype(float).to_dict()[0]
+
             agg_cell_states = {}
             for m_c in list(main_counts_dict.keys()):
                 cell_states = pd.DataFrame([i[m_c] for i in overlap_dict['states']]).sum(axis=0).to_frame()
-                cell_states = cell_states/cell_states.sum()    
+                cell_states = (cell_states/cell_states.sum()).fillna(0.000).round(decimals=3)
 
-                agg_cell_states[m_c] = cell_states.to_dict()[0]
+                cell_states[0] = cell_states[0].map('{:.4f}'.format)
+
+                agg_cell_states[m_c] = cell_states.astype(float).to_dict()[0]
+            
 
             new_geojson['features'][0]['properties']['Main_Cell_Types'] = main_counts_dict
             new_geojson['features'][0]['properties']['Cell_States'] = agg_cell_states
+            print(new_geojson)
 
             new_child = dl.Overlay(
                 dl.LayerGroup(
-                    dl.GeoJSON(data = new_geojson, id = f'manual_roi{len(self.current_overlays)-3}', options = dict(style=self.ftu_style_handle),
+                    dl.GeoJSON(data = new_geojson, id = 'manual-bounds', options = dict(style=self.ftu_style_handle),
                         hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = self.cell_vis_val),
                         hoverStyle = arrow_function(dict(weight=5, color = '#ff737e',dashArray = ''))
                     )
@@ -1869,6 +1222,7 @@ class SlideHeatVis:
             )
 
             self.current_overlays.append(new_child)
+
 
             return self.current_overlays
 
@@ -1878,29 +1232,6 @@ class SlideHeatVis:
 def app(*args):
 
     run_type = 'local'
-
-    slide_info_dict = {
-        'XY01_IU-21-015F.svs':{
-            'key_name':'XY01IU21015F',
-            'bounds':[-121.4887696318595,0.0,-121.29151201587271,0.19456360965996605],
-            'wsi_dims':[22012,21566]
-        },
-        'XY02_IU-21-016F.svs':{
-            'key_name':'XY02IU21016F',
-            'bounds':[-121.48876728121257,0.0,-121.29107290809065,0.18546976820936942],
-            'wsi_dims':[22061,20558]
-        },
-        'XY03_IU-21-019F.svs':{
-            'key_name':'XY03IU21019F',
-            'bounds':[-121.48876962947176,0.0,-121.29142240206029,0.19455461087467554],
-            'wsi_dims':[22022,21565]
-        },
-        'XY04_IU-21-020F.svs':{
-            'key_name':'XY04IU21020F',
-            'bounds':[-121.48876962708414,0.0,-121.29123421301975,0.19454563737274247],
-            'wsi_dims':[22043,21564]
-        }
-    }
 
     try:
         run_type = os.environ['RUNTYPE']
@@ -1914,19 +1245,28 @@ def app(*args):
     
     if run_type == 'local':
         # For local testing
-        base_dir = '/mnt/c/Users/Sam/Desktop/HIVE/'
+        base_dir = '/mnt/c/Users/Sam/Desktop/HIVE/SpotNet_NonEssential_Files/WSI_Heatmap_Viewer_App/assets/slide_info/'
 
-        available_slides = sorted(glob(base_dir+'FFPE/*.svs'))
+        available_slides = sorted(glob(base_dir+'*.svs'))
         slide_names = [i.split('/')[-1] for i in available_slides]
         slide_name = slide_names[0]
+        
+        # Loading initial dataset
+        dataset_reference_path = 'dataset_reference.json'
+        dataset_handler = DatasetHandler(dataset_reference_path)
+
+        dataset_info_dict = dataset_handler.get_dataset('Indiana U.')
+        slide_info_dict = {}
+        for slide in dataset_info_dict['slide_info']:
+            slide_info_dict[slide['name']] = slide
 
         slide_url = 'http://localhost:5000/rgb/'+slide_info_dict[slide_name]["key_name"]+'/{z}/{x}/{y}.png?r=B04&r_range=[46,168]&g=B03&g_range=[46,168]&b=B02&b_range=[46,168]&'
-        ftu_path = base_dir+'SpotNet_NonEssential_Files/WSI_Heatmap_Viewer_App/assets/slide_info/'+slide_name.replace('.svs','_scaled.geojson')
-        spot_path = base_dir+'SpotNet_NonEssential_Files/WSI_Heatmap_Viewer_App/assets/slide_info/'+slide_name.replace('.svs','_Spots_scaled.geojson')
+        ftu_path = base_dir+slide_name.replace('.svs','_scaled.geojson')
+        spot_path = base_dir+slide_name.replace('.svs','_Spots_scaled.geojson')
         cell_graphics_path = 'graphic_reference.json'
         asct_b_path = 'Kidney_v1.2 - Kidney_v1.2.csv'
 
-        metadata_paths = [base_dir+'SpotNet_NonEssential_Files/WSI_Heatmap_Viewer_App/assets/slide_info/'+s.replace('.svs','_scaled.geojson') for s in slide_names]
+        metadata_paths = [base_dir+s.replace('.svs','_scaled.geojson') for s in slide_names]
 
     elif run_type == 'web' or run_type=='AWS':
         # For test deployment
@@ -1981,9 +1321,11 @@ def app(*args):
     wsi = WholeSlide(slide_url,slide_name,slide_info_dict[slide_name],ftu_path,spot_path)
 
     # printing stuff
+    """
     print(f'Current WSI name: {slide_name}')
     print(f'Current FTU path: {ftu_path}')
     print(f'Current slide url: {slide_url}')
+    """
 
     external_stylesheets = [dbc.themes.LUX]
 
@@ -1991,41 +1333,55 @@ def app(*args):
     current_slide_bounds = slide_info_dict[slide_name]['bounds']
     center_point = [(current_slide_bounds[1]+current_slide_bounds[3])/2,(current_slide_bounds[0]+current_slide_bounds[2])/2]
     
-    map_dict = {
-        'url':wsi.image_url,
-        'FTUs':{
-            'Glomeruli': {
-                'geojson':{'type':'FeatureCollection', 'features': [i for i in wsi.geojson_ftus['features'] if i['properties']['structure']=='Glomeruli']},
-                'id': 'glom-bounds',
-                'color': '#390191',
-                'hover_color':'#666'
-            },
-            'Tubules': {
-                'geojson':{'type':'FeatureCollection', 'features': [i for i in wsi.geojson_ftus['features'] if i['properties']['structure']=='Tubules']},
-                'id':'tub-bounds',
-                'color': '#e71d1d',
-                'hover_color': '#ff0b0a'
-            },
-            'Arterioles': {
-                'geojson':{'type':'FeatureCollection', 'features': [i for i in wsi.geojson_ftus['features'] if i['properties']['structure']=='Arterioles']},
-                'id':'art-bounds',
-                'color': '#b6d7a8',
-                'hover_color': '#50f207'
+    ftus = list(dataset_info_dict['ftu']['names'].keys())
+    if dataset_info_dict['ftu']['annotation_type']=='GeoJSON':
+        map_dict = {
+            'url':wsi.image_url,
+            'FTUs':{
+                'Glomeruli': {
+                    'geojson':{'type':'FeatureCollection', 'features': [i for i in wsi.geojson_ftus['features'] if i['properties']['structure']=='Glomeruli']},
+                    'id': 'glom-bounds',
+                    'color': '#390191',
+                    'hover_color':'#666'
+                },
+                'Tubules': {
+                    'geojson':{'type':'FeatureCollection', 'features': [i for i in wsi.geojson_ftus['features'] if i['properties']['structure']=='Tubules']},
+                    'id':'tub-bounds',
+                    'color': '#e71d1d',
+                    'hover_color': '#ff0b0a'
+                },
+                'Arterioles': {
+                    'geojson':{'type':'FeatureCollection', 'features': [i for i in wsi.geojson_ftus['features'] if i['properties']['structure']=='Arterioles']},
+                    'id':'art-bounds',
+                    'color': '#b6d7a8',
+                    'hover_color': '#50f207'
+                }
             }
         }
-    }
 
-    spot_dict = {
-        'geojson':wsi.geojson_spots,
-        'id': 'spot-bounds',
-        'color': '#dffa00',
-        'hover_color':'#9caf00'
-    }
+    if dataset_info_dict['omics_type']=='Visium':
+        spot_dict = {
+            'geojson':wsi.geojson_spots,
+            'id': 'spot-bounds',
+            'color': '#dffa00',
+            'hover_color':'#9caf00'
+        }
 
-    main_layout = gen_layout(cell_names,slide_names,center_point,map_dict,spot_dict)
+    layout_handler = LayoutHandler()
+    layout_handler.gen_vis_layout(cell_names,slide_names,center_point,map_dict,spot_dict)
+    layout_handler.gen_builder_layout(dataset_handler)
+
+
+    layout_dict = {
+        'vis': layout_handler.current_vis_layout,
+        'dataset-builder':layout_handler.current_builder_layout,
+        'dataset-uploader':layout_handler.current_uploader_layout,
+        'welcome':layout_handler.current_welcome_layout,
+        'initial':layout_handler.current_initial_layout
+    }
 
     main_app = DashProxy(__name__,external_stylesheets=external_stylesheets,transforms = [MultiplexerTransform()])
-    vis_app = SlideHeatVis(main_app,main_layout,wsi,cell_graphics_key,asct_b_table,metadata, slide_info_dict,run_type)
+    vis_app = SlideHeatVis(main_app,layout_dict,wsi,cell_graphics_key,asct_b_table,metadata,slide_info_dict,run_type)
 
     if run_type=='web':
         return vis_app.app
