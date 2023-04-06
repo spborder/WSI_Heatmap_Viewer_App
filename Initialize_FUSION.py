@@ -14,12 +14,13 @@ import sys
 import json
 import geojson
 
+import pandas as pd
 from glob import glob
 
 import plotly.express as px
 import plotly.graph_objects as go
 
-from dash import dcc, ctx, Dash
+from dash import dcc, ctx, Dash, dash_table
 import dash_bootstrap_components as dbc
 import dash_cytoscape as cyto
 import dash_leaflet as dl
@@ -373,7 +374,7 @@ class LayoutHandler:
                                 html.Div(
                                     id = 'cell-select-div',
                                     children=[
-                                        dcc.Dropdown(cell_types_list,id='cell-drop')
+                                        dcc.Dropdown(cell_types_list,cell_types_list[0]['value'],id='cell-drop')
                                     ]
                                 )
                             ],md=6),
@@ -424,7 +425,7 @@ class LayoutHandler:
                         dbc.Row(sider),
                         dbc.Row([
                             dbc.Row(
-                                id = 'descrip-and-instruct',
+                                id = 'vis-descrip-and-instruct',
                                 children = [description]
                             ),
                             html.B(),
@@ -441,7 +442,7 @@ class LayoutHandler:
                                 ],style={"height":"100vh"}
                             )
                         ])
-                    ],fluid=True,id='container-content')
+                    ],fluid=True,id='vis-container-content')
 
         self.current_vis_layout = vis_content
 
@@ -457,7 +458,7 @@ class LayoutHandler:
                 html.Img(id='dataset-builder-logo-side',src=('./assets/Lab_Logo.png'),height='280px',width='250px'),
                 dbc.Nav([
                     dbc.NavLink('Welcome',href='/welcome',active='exact'),
-                    dbc.NavLink('FUSION Visualizer',href='/',active='exact'),
+                    dbc.NavLink('FUSION Visualizer',href='/vis',active='exact'),
                     dbc.NavLink('Dataset Builder',href='/dataset-builder',active='exact'),
                     dbc.NavLink('Dataset Uploader',href='/dataset-uploader',active='exact')
                 ],vertical=True,pills=True)], id='dataset-builder-sidebar-offcanvas',style={'background-color':"#f8f9fa"}
@@ -487,15 +488,76 @@ class LayoutHandler:
             ],style={'marginBottom':'20px'}
         )
 
+        # Table containing information on each datset in dataset_handler.dataset_reference
+        include_columns = ["name","organ","histology_type","stain","omics_type","description","metadata"]
+        combined_dataset_dict = []
+        for d_name in dataset_handler.dataset_names:
+            specific_dict = dataset_handler.get_dataset(d_name)
+            dataset_dict = {}
+            for i in include_columns:
+                dataset_dict[i] = specific_dict[i]
+
+            # Adding extra info determined from nested keys (ftu, slide_info)
+            dataset_dict['annotation_type'] = specific_dict['ftu']['annotation_type']
+            dataset_dict['FTUs'] = ','.join(list(specific_dict['ftu']['names'].keys()))
+            dataset_dict['N_Slides'] = len(specific_dict['slide_info'])
+
+            combined_dataset_dict.append(dataset_dict)
+        
+        dataset_df = pd.DataFrame.from_records(combined_dataset_dict)
+        
+        # Table with a bunch of filtering and tooltip info
+        table_layout = html.Div([
+            dash_table.DataTable(
+                id = 'dataset-table',
+                columns = [{'name':i,'id':i,'deletable':True,'selectable':True} for i in dataset_df],
+                data = dataset_df.to_dict('records'),
+                editable = False,
+                filter_action='native',
+                sort_action = 'native',
+                sort_mode = 'multi',
+                column_selectable = 'single',
+                row_selectable = 'multi',
+                row_deletable = False,
+                selected_columns = [],
+                selected_rows = [],
+                page_action='native',
+                page_current=0,
+                page_size=10,
+                style_cell = {
+                    'overflow':'hidden',
+                    'textOverflow':'ellipsis',
+                    'maxWidth':0
+                },
+                tooltip_data = [
+                    {
+                        column: {'value':str(value),'type':'markdown'}
+                        for column, value in row.items()
+                    } for row in dataset_df.to_dict('records')
+                ],
+                tooltip_duration = None
+            )
+        ])
+
         builder_layout = html.Div([
             dbc.Container([
                 dbc.Row(sider),
+                html.H1('Dataset Builder'),
                 dbc.Row([
                     dbc.Row(
                         id = 'dataset-builder-descrip-and-instruct',
                         children = [description]
                     ),
-                    html.B()
+                    html.Hr(),
+                    html.H3('Select a Dataset to add slides to current session'),
+                    html.Hr(),
+                    table_layout,
+                    html.H3('Select Slides to include in current session'),
+                    html.Hr(),
+                    html.Div(id='slide-table'),
+                    html.Hr(),
+                    html.H3('Current Metadata'),
+                    html.Div(id='slide-metadata-plots')
                 ])
             ],fluid=True,id='dataset-builder-container-content')
         ])
@@ -515,7 +577,7 @@ class LayoutHandler:
                 html.Img(id='dataset-uploader-logo-side',src=('./assets/Lab_Logo.png'),height='280px',width='250px'),
                 dbc.Nav([
                     dbc.NavLink('Welcome',href='/welcome',active='exact'),
-                    dbc.NavLink('FUSION Visualizer',href='/',active='exact'),
+                    dbc.NavLink('FUSION Visualizer',href='/vis',active='exact'),
                     dbc.NavLink('Dataset Builder',href='/dataset-builder',active='exact'),
                     dbc.NavLink('Dataset Uploader',href='/dataset-uploader',active='exact')
                 ],vertical=True,pills=True)], id='dataset-uploader-sidebar-offcanvas',style={'background-color':"#f8f9fa"}
@@ -548,6 +610,7 @@ class LayoutHandler:
         uploader_layout = html.Div([
             dbc.Container([
                 dbc.Row(sider),
+                html.H1('Dataset Uploader'),
                 dbc.Row([
                     dbc.Row(
                         id = 'dataset-uploader-descrip-and-instruct',

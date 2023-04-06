@@ -4,3 +4,6 @@ Kidney_v1.2 - Kidney_v1.2.csv
 Cluster_Viewer.py
 *.cwl
 *.json
+Process_Terracotta.py
+*.cypthon-36.pyc
+*.sqlite

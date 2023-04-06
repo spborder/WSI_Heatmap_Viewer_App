@@ -111,6 +111,7 @@ class SlideHeatVis:
         }
 
         self.current_ftu_layers = list(self.wsi.ftus.keys())
+        self.current_ftus = list(self.wsi.ftus.keys())
         self.pie_ftu = self.current_ftu_layers[-1]
         self.pie_chart_order = self.current_ftu_layers.copy()
 
@@ -191,25 +192,21 @@ class SlideHeatVis:
             [Output('roi-pie','figure'),Output('state-bar','figure')],
             [Input('slide-map','zoom'),Input('slide-map','viewport')],
             State('slide-map','bounds'),
-            prevent_initial_call=True
         )(self.update_roi_pie)
 
         self.app.callback(
             [Output('layer-control','children'),Output('colorbar-div','children')],
             [Input('cell-drop','value'),Input('vis-slider','value')],
-            prevent_initial_call=True
         )(self.update_cell)
         
         self.app.callback(
             [Output('cell-graphic','src'),Output('cell-hierarchy','elements')],
             Input('cell-cards-drop','value'),
-            prevent_initial_call=True
         )(self.update_cell_hierarchy)
 
         self.app.callback(
             [Output('state-bar','figure'),Output('roi-pie','figure')],
             Input('roi-pie','clickData'),
-            prevent_initial_call=True
         )(self.update_state_bar)
 
         self.app.callback(
@@ -232,20 +229,6 @@ class SlideHeatVis:
         )(self.get_click)
 
         self.app.callback(
-            Output('vis-collapse-content','is_open'),
-            Input('vis-collapse-descrip','n_clicks'),
-            [State('vis-collapse-content','is_open')],
-            prevent_initial_call=True
-        )(self.view_instructions)
-
-        self.app.callback(
-            Output('vis-sidebar-offcanvas','is_open'),
-            Input('vis-sidebar-button','n_clicks'),
-            [State('vis-sidebar-offcanvas','is_open')],
-            prevent_initial_call=True
-        )(self.view_sidebar)
-
-        self.app.callback(
             [Output('slide-tile','url'), Output('layer-control','children'), Output('slide-map','center'),
             Output('roi-pie','figure'),Output('state-bar','figure')],
             Input('slide-select','value'),
@@ -266,7 +249,6 @@ class SlideHeatVis:
             Input('label-select','value')],
             [Output('cluster-graph','figure'),
             Output('label-select','options')],
-            prevent_initial_call=True
         )(self.update_graph)
 
         self.app.callback(
@@ -275,7 +257,6 @@ class SlideHeatVis:
             [Output('selected-image','figure'),
             Output('selected-cell-types','figure'),
             Output('selected-cell-states','figure')],
-            prevent_initial_call=True
         )(self.update_selected)
 
         self.app.callback(
@@ -289,13 +270,8 @@ class SlideHeatVis:
             Output('layer-control','children'),
             prevent_initial_call=True
         )(self.add_manual_roi)
-        
-        self.app.callback(
-            Output(f'{self.current_page}-container-content','children'),
-            [Input('url','pathname')]
-        )(self.update_page)
 
-        self.update_callbacks()
+        self.all_layout_callbacks()
 
         # Comment out this line when running on the web
         if self.run_type == 'local':
@@ -319,32 +295,32 @@ class SlideHeatVis:
         if pathname.replace('/','') in self.layout_dict:
             
             self.current_page = pathname.replace('/','')
-            print(self.current_page)
-            self.update_callbacks()
 
             return self.layout_dict[self.current_page]
 
-    def update_callbacks(self):
+    def all_layout_callbacks(self):
 
-        self.app.callback(
-            Output(f'{self.current_page}-container-content','children'),
-            [Input('url','pathname')],
-            prevent_initial_call = True
-        )(self.update_page)
+        # Adding callbacks for items in every page
+        for page in self.layout_dict:
+            if not page == 'initial':
+                self.app.callback(
+                    Output(f'{page}-container-content','children'),
+                    [Input('url','pathname')],
+                )(self.update_page)
 
-        self.app.callback(
-            Output(f'{self.current_page}-collapse-content','is_open'),
-            Input(f'{self.current_page}-collapse-descrip','n_clicks'),
-            [State(f'{self.current_page}-collapse-content','is_open')],
-            prevent_initial_call=True
-        )(self.view_instructions)
+                self.app.callback(
+                    Output(f'{page}-collapse-content','is_open'),
+                    Input(f'{page}-collapse-descrip','n_clicks'),
+                    [State(f'{page}-collapse-content','is_open')],
+                    prevent_initial_call=True
+                )(self.view_instructions)
 
-        self.app.callback(
-            Output(f'{self.current_page}-sidebar-offcanvas','is_open'),
-            Input(f'{self.current_page}-sidebar-button','n_clicks'),
-            [State(f'{self.current_page}-sidebar-offcanvas','is_open')],
-            prevent_initial_call=True
-        )(self.view_sidebar)
+                self.app.callback(
+                    Output(f'{page}-sidebar-offcanvas','is_open'),
+                    Input(f'{page}-sidebar-button','n_clicks'),
+                    [State(f'{page}-sidebar-offcanvas','is_open')],
+                    prevent_initial_call=True
+                )(self.view_sidebar)
 
     def update_roi_pie(self,zoom,viewport,bounds):
 
@@ -614,98 +590,97 @@ class SlideHeatVis:
 
     def update_cell(self,cell_val,vis_val):
         
-        # Updating current cell prop
-        if cell_val in self.cell_names_key:
-            self.current_cell = self.cell_names_key[cell_val]
-            self.update_hex_color_key('cell_value')
+        if not cell_val is None:
+            # Updating current cell prop
+            if cell_val in self.cell_names_key:
+                self.current_cell = self.cell_names_key[cell_val]
+                self.update_hex_color_key('cell_value')
 
-            color_bar = dl.Colorbar(colorscale = list(self.hex_color_key.values()),width=600,height=10,position='bottomleft',id=f'colorbar{random.randint(0,100)}')
-        
-        elif cell_val == 'Max Cell Type':
-            self.update_hex_color_key('max_cell')
-            self.current_cell = 'max'
+                color_bar = dl.Colorbar(colorscale = list(self.hex_color_key.values()),width=600,height=10,position='bottomleft',id=f'colorbar{random.randint(0,100)}')
+            
+            elif cell_val == 'Max Cell Type':
+                self.update_hex_color_key('max_cell')
+                self.current_cell = 'max'
 
-            cell_types = list(self.wsi.geojson_ftus['features'][0]['properties']['Main_Cell_Types'].keys())
-            color_bar = dlx.categorical_colorbar(categories = cell_types, colorscale = list(self.hex_color_key.values()),width=600,height=10,position='bottomleft',id=f'colorbar{random.randint(0,100)}')
-        
-        elif cell_val == 'Morphometrics Clusters':
-            self.update_hex_color_key('cluster')
-            self.current_cell = 'cluster'
+                cell_types = list(self.wsi.geojson_ftus['features'][0]['properties']['Main_Cell_Types'].keys())
+                color_bar = dlx.categorical_colorbar(categories = cell_types, colorscale = list(self.hex_color_key.values()),width=600,height=10,position='bottomleft',id=f'colorbar{random.randint(0,100)}')
+            
+            elif cell_val == 'Morphometrics Clusters':
+                self.update_hex_color_key('cluster')
+                self.current_cell = 'cluster'
 
-            color_bar = dl.Colorbar(colorscale = list(self.hex_color_key.values()),width=600,height=10,position='bottomleft',id=f'colorbar{random.randint(0,100)}')
-        
-        else:
-            # Used for morphometrics values
-            self.current_cell = 'morpho'
-            self.update_hex_color_key(cell_val)
+                color_bar = dl.Colorbar(colorscale = list(self.hex_color_key.values()),width=600,height=10,position='bottomleft',id=f'colorbar{random.randint(0,100)}')
+            
+            else:
+                # Used for morphometrics values
+                self.current_cell = 'morpho'
+                self.update_hex_color_key(cell_val)
 
-            color_bar = dl.Colorbar(colorscale = list(self.hex_color_key.values()),width=600,height=10,position='bottomleft',id=f'colorbar{random.randint(0,100)}')
+                color_bar = dl.Colorbar(colorscale = list(self.hex_color_key.values()),width=600,height=10,position='bottomleft',id=f'colorbar{random.randint(0,100)}')
 
-        self.cell_vis_val = vis_val/100
+            self.cell_vis_val = vis_val/100
 
-        vis_val = vis_val/100
+            vis_val = vis_val/100
 
-        # More print statements:
-        """
-        print(f'Slide name in update_cell: {self.wsi.slide_name}')
-        print(f'Image URL in update_cell: {self.wsi.image_url}')
-        print(f'FTU path in update_cell: {self.wsi.ftu_path}')
-        """
-        # Changing fill and fill-opacity properties for structures and adding that as a property
-        
-        map_dict = {
-            'url':self.wsi.image_url,
-            'FTUs':{
-                'Glomeruli': {
-                    'geojson':{'type':'FeatureCollection', 'features': [i for i in self.wsi.geojson_ftus['features'] if i['properties']['structure']=='Glomeruli']},
-                    'id': 'glom-bounds',
-                    'color': '#390191',
-                    'hover_color':'#666'
-                },
-                'Tubules': {
-                    'geojson':{'type':'FeatureCollection', 'features': [i for i in self.wsi.geojson_ftus['features'] if i['properties']['structure']=='Tubules']},
-                    'id':'tub-bounds',
-                    'color': '#e71d1d',
-                    'hover_color': '#ff0b0a'
-                },
-                'Arterioles': {
-                    'geojson':{'type':'FeatureCollection', 'features': [i for i in self.wsi.geojson_ftus['features'] if i['properties']['structure']=='Arterioles']},
-                    'id':'art-bounds',
-                    'color': '#b6d7a8',
-                    'hover_color': '#50f207'
+            # More print statements:
+            """
+            print(f'Slide name in update_cell: {self.wsi.slide_name}')
+            print(f'Image URL in update_cell: {self.wsi.image_url}')
+            print(f'FTU path in update_cell: {self.wsi.ftu_path}')
+            """
+            # Changing fill and fill-opacity properties for structures and adding that as a property
+            
+            map_dict = {
+                'url':self.wsi.image_url,
+                'FTUs':{
+                    'Glomeruli': {
+                        'geojson':{'type':'FeatureCollection', 'features': [i for i in self.wsi.geojson_ftus['features'] if i['properties']['structure']=='Glomeruli']},
+                        'id': 'glom-bounds',
+                        'color': '#390191',
+                        'hover_color':'#666'
+                    },
+                    'Tubules': {
+                        'geojson':{'type':'FeatureCollection', 'features': [i for i in self.wsi.geojson_ftus['features'] if i['properties']['structure']=='Tubules']},
+                        'id':'tub-bounds',
+                        'color': '#e71d1d',
+                        'hover_color': '#ff0b0a'
+                    },
+                    'Arterioles': {
+                        'geojson':{'type':'FeatureCollection', 'features': [i for i in self.wsi.geojson_ftus['features'] if i['properties']['structure']=='Arterioles']},
+                        'id':'art-bounds',
+                        'color': '#b6d7a8',
+                        'hover_color': '#50f207'
+                    }
                 }
             }
-        }
 
-        spot_dict = {
-            'geojson':self.wsi.geojson_spots,
-            'id': 'spot-bounds',
-            'color': '#dffa00',
-            'hover_color':'#9caf00'
-        }
+            spot_dict = {
+                'geojson':self.wsi.geojson_spots,
+                'id': 'spot-bounds',
+                'color': '#dffa00',
+                'hover_color':'#9caf00'
+            }
 
-        new_children = [
-            dl.Overlay(
-                dl.LayerGroup(
-                    dl.GeoJSON(data = map_dict['FTUs'][struct]['geojson'], id = map_dict['FTUs'][struct]['id'], options = dict(style=self.ftu_style_handle),
-                            hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = vis_val, ftu_colors=self.ftu_colors),
-                            hoverStyle = arrow_function(dict(weight=5, color = map_dict['FTUs'][struct]['hover_color'], dashArray = '')))),
-                    name = struct, checked = True, id = self.wsi.slide_info_dict['key_name']+'_'+struct)
-            for struct in map_dict['FTUs']
-            ]
-        
-        new_children += [
-            dl.Overlay(
-                dl.LayerGroup(
-                    dl.GeoJSON(data = spot_dict['geojson'], id = spot_dict['id'], options = dict(style = self.ftu_style_handle),
-                            hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = vis_val, ftu_colors= self.ftu_colors),
-                            hoverStyle = arrow_function(dict(weight=5, color = spot_dict['hover_color'], dashArray = '')))),
-                    name = 'Spots', checked = False, id = self.wsi.slide_info_dict['key_name']+'_Spots')
-            ]
-        
-        #new_children = self.current_overlays
-        
-        return new_children, color_bar
+            new_children = [
+                dl.Overlay(
+                    dl.LayerGroup(
+                        dl.GeoJSON(data = map_dict['FTUs'][struct]['geojson'], id = map_dict['FTUs'][struct]['id'], options = dict(style=self.ftu_style_handle),
+                                hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = vis_val, ftu_colors=self.ftu_colors),
+                                hoverStyle = arrow_function(dict(weight=5, color = map_dict['FTUs'][struct]['hover_color'], dashArray = '')))),
+                        name = struct, checked = True, id = self.wsi.slide_info_dict['key_name']+'_'+struct)
+                for struct in map_dict['FTUs']
+                ]
+            
+            new_children += [
+                dl.Overlay(
+                    dl.LayerGroup(
+                        dl.GeoJSON(data = spot_dict['geojson'], id = spot_dict['id'], options = dict(style = self.ftu_style_handle),
+                                hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = vis_val, ftu_colors= self.ftu_colors),
+                                hoverStyle = arrow_function(dict(weight=5, color = spot_dict['hover_color'], dashArray = '')))),
+                        name = 'Spots', checked = False, id = self.wsi.slide_info_dict['key_name']+'_Spots')
+                ]
+                        
+            return new_children, color_bar
 
     def update_cell_hierarchy(self,cell_val):
         # Loading the cell-graphic and hierarchy image
@@ -1103,90 +1078,97 @@ class SlideHeatVis:
 
     def update_selected(self,hover,selected):
 
-        if 'cluster-graph.selectedData' in list(ctx.triggered_prop_ids.keys()):
-            sample_ids = [i['customdata'][0] for i in selected['points']]
-            sample_info = []
-            for f in self.metadata:
-                if 'ftu_name' in f:
-                    if f['ftu_name'] in sample_ids:
-                        sample_info.append(f)
-        else:
-            if hover is not None:
-                sample_id = hover['points'][0]['customdata'][0]
+        if hover is not None:
+            if 'cluster-graph.selectedData' in list(ctx.triggered_prop_ids.keys()):
+                sample_ids = [i['customdata'][0] for i in selected['points']]
                 sample_info = []
                 for f in self.metadata:
                     if 'ftu_name' in f:
-                        if f['ftu_name']==sample_id:
+                        if f['ftu_name'] in sample_ids:
                             sample_info.append(f)
             else:
-                sample_info = [self.metadata[0]]
+                if hover is not None:
+                    sample_id = hover['points'][0]['customdata'][0]
+                    sample_info = []
+                    for f in self.metadata:
+                        if 'ftu_name' in f:
+                            if f['ftu_name']==sample_id:
+                                sample_info.append(f)
+                else:
+                    sample_info = [self.metadata[0]]
 
-        self.current_selected_samples = sample_info
+            self.current_selected_samples = sample_info
 
-        current_image = self.grab_image(sample_info)
-        if len(current_image)==1:
-            selected_image = go.Figure(px.imshow(current_image[0]))
+            current_image = self.grab_image(sample_info)
+            if len(current_image)==1:
+                selected_image = go.Figure(px.imshow(current_image[0]))
+            else:
+                selected_image = go.Figure(px.imshow(np.stack(current_image,axis=0),animation_frame=0,binary_string=True,labels=dict(animation_frame=self.current_ftu)))
+            
+            selected_image.update_layout(
+                margin=dict(l=0,r=0,t=0,b=0)
+            )
+
+            # Preparing figure containing cell types + cell states info
+            counts_data = pd.DataFrame([i['Main_Cell_Types'] for i in sample_info]).sum(axis=0).to_frame()
+            counts_data.columns = ['Selected Data Points']
+            counts_data = counts_data.reset_index()
+            # Normalizing to sum to 1
+            counts_data['Selected Data Points'] = counts_data['Selected Data Points']/counts_data['Selected Data Points'].sum()
+            # Only getting the top-5
+            counts_data = counts_data.sort_values(by='Selected Data Points',ascending=False)
+            counts_data = counts_data[counts_data['Selected Data Points']>0]
+            f_pie = px.pie(counts_data,values='Selected Data Points',names='index')
+
+            # Getting initial cell state info
+            first_cell = counts_data['index'].tolist()[0]
+            state_data = pd.DataFrame([i['Cell_States'][first_cell] for i in sample_info]).sum(axis=0).to_frame()
+            state_data = state_data.reset_index()
+            state_data.columns = ['Cell States',f'Cell States for {first_cell}']
+
+            state_data[f'Cell States for {first_cell}'] = state_data[f'Cell States for {first_cell}']/state_data[f'Cell States for {first_cell}'].sum()
+
+            s_bar = px.bar(state_data, x='Cell States', y = f'Cell States for {first_cell}', title = f'Cell States for:<br><sup>{self.cell_graphics_key[first_cell]["full"]} in:</sup><br><sup>selected points</sup>')
+            
+            selected_cell_types = go.Figure(f_pie)
+            selected_cell_states = go.Figure(s_bar)
+
+            selected_cell_states.update_layout(
+                margin=dict(l=0,r=0,t=85,b=0)
+            )
+            selected_cell_types.update_layout(
+                margin=dict(l=0,r=0,t=0,b=0),
+                showlegend=False
+            )
+
+            return selected_image, selected_cell_types, selected_cell_states
         else:
-            selected_image = go.Figure(px.imshow(np.stack(current_image,axis=0),animation_frame=0,binary_string=True,labels=dict(animation_frame=self.current_ftu)))
-        
-        selected_image.update_layout(
-            margin=dict(l=0,r=0,t=0,b=0)
-        )
-
-        # Preparing figure containing cell types + cell states info
-        counts_data = pd.DataFrame([i['Main_Cell_Types'] for i in sample_info]).sum(axis=0).to_frame()
-        counts_data.columns = ['Selected Data Points']
-        counts_data = counts_data.reset_index()
-        # Normalizing to sum to 1
-        counts_data['Selected Data Points'] = counts_data['Selected Data Points']/counts_data['Selected Data Points'].sum()
-        # Only getting the top-5
-        counts_data = counts_data.sort_values(by='Selected Data Points',ascending=False)
-        counts_data = counts_data[counts_data['Selected Data Points']>0]
-        f_pie = px.pie(counts_data,values='Selected Data Points',names='index')
-
-        # Getting initial cell state info
-        first_cell = counts_data['index'].tolist()[0]
-        state_data = pd.DataFrame([i['Cell_States'][first_cell] for i in sample_info]).sum(axis=0).to_frame()
-        state_data = state_data.reset_index()
-        state_data.columns = ['Cell States',f'Cell States for {first_cell}']
-
-        state_data[f'Cell States for {first_cell}'] = state_data[f'Cell States for {first_cell}']/state_data[f'Cell States for {first_cell}'].sum()
-
-        s_bar = px.bar(state_data, x='Cell States', y = f'Cell States for {first_cell}', title = f'Cell States for:<br><sup>{self.cell_graphics_key[first_cell]["full"]} in:</sup><br><sup>selected points</sup>')
-        
-        selected_cell_types = go.Figure(f_pie)
-        selected_cell_states = go.Figure(s_bar)
-
-        selected_cell_states.update_layout(
-            margin=dict(l=0,r=0,t=85,b=0)
-        )
-        selected_cell_types.update_layout(
-            margin=dict(l=0,r=0,t=0,b=0),
-            showlegend=False
-        )
-
-        return selected_image, selected_cell_types, selected_cell_states
+            return go.Figure(), go.Figure(), go.Figure()
     
     def update_selected_state_bar(self, selected_cell_click):
-        cell_type = selected_cell_click['points'][0]['label']
+        #print(f'Selected cell click: {selected_cell_click}')
+        if not selected_cell_click is None:
+            cell_type = selected_cell_click['points'][0]['label']
 
-        state_data = pd.DataFrame([i['Cell_States'][cell_type] for i in self.current_selected_samples]).sum(axis=0).to_frame()
-        state_data = state_data.reset_index()
-        state_data.columns = ['Cell States',f'Cell States for {cell_type}']
-        state_data[f'Cell States for {cell_type}'] = state_data[f'Cell States for {cell_type}']/state_data[f'Cell States for {cell_type}'].sum()
+            state_data = pd.DataFrame([i['Cell_States'][cell_type] for i in self.current_selected_samples]).sum(axis=0).to_frame()
+            state_data = state_data.reset_index()
+            state_data.columns = ['Cell States',f'Cell States for {cell_type}']
+            state_data[f'Cell States for {cell_type}'] = state_data[f'Cell States for {cell_type}']/state_data[f'Cell States for {cell_type}'].sum()
 
-        s_bar = px.bar(state_data, x='Cell States', y = f'Cell States for {cell_type}', title = f'Cell States for:<br><sup>{self.cell_graphics_key[cell_type]["full"]} in:</sup><br><sup>selected points</sup>')
-        s_bar = go.Figure(s_bar)
+            s_bar = px.bar(state_data, x='Cell States', y = f'Cell States for {cell_type}', title = f'Cell States for:<br><sup>{self.cell_graphics_key[cell_type]["full"]} in:</sup><br><sup>selected points</sup>')
+            s_bar = go.Figure(s_bar)
 
-        s_bar.update_layout(
-            margin=dict(l=0,r=0,t=85,b=0)
-        )
+            s_bar.update_layout(
+                margin=dict(l=0,r=0,t=85,b=0)
+            )
 
-        return s_bar
+            return s_bar
+        else:
+            return go.Figure()
 
     def add_manual_roi(self,new_geojson):
         
-        print(new_geojson)
+        #print(new_geojson)
         if not new_geojson['features'] == []:
             # New geojson has no properties which can be used for overlays or anything so we have to add those
             # Step 1, find intersecting spots:
@@ -1210,7 +1192,7 @@ class SlideHeatVis:
 
             new_geojson['features'][0]['properties']['Main_Cell_Types'] = main_counts_dict
             new_geojson['features'][0]['properties']['Cell_States'] = agg_cell_states
-            print(new_geojson)
+            #print(new_geojson)
 
             new_child = dl.Overlay(
                 dl.LayerGroup(
@@ -1238,11 +1220,12 @@ def app(*args):
     except:
         print(f'Using {run_type} run type')
 
-    
+    """
     print(f'Using {run_type} run type')
     print(f'Current working directory is: {os.getcwd()}')
     print(f'Contents of current working directory is: {os.listdir(os.getcwd())}')
-    
+    """
+
     if run_type == 'local':
         # For local testing
         base_dir = '/mnt/c/Users/Sam/Desktop/HIVE/SpotNet_NonEssential_Files/WSI_Heatmap_Viewer_App/assets/slide_info/'
@@ -1371,13 +1354,12 @@ def app(*args):
     layout_handler.gen_vis_layout(cell_names,slide_names,center_point,map_dict,spot_dict)
     layout_handler.gen_builder_layout(dataset_handler)
 
-
     layout_dict = {
+        'initial':layout_handler.current_initial_layout,
+        'welcome':layout_handler.current_welcome_layout,
         'vis': layout_handler.current_vis_layout,
         'dataset-builder':layout_handler.current_builder_layout,
         'dataset-uploader':layout_handler.current_uploader_layout,
-        'welcome':layout_handler.current_welcome_layout,
-        'initial':layout_handler.current_initial_layout
     }
 
     main_app = DashProxy(__name__,external_stylesheets=external_stylesheets,transforms = [MultiplexerTransform()])
