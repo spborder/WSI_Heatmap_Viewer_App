@@ -35,7 +35,7 @@ from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 from matplotlib import cm
 
-from dash import dcc, ctx, Dash
+from dash import dcc, ctx, Dash, MATCH, ALL, dash_table
 import dash_bootstrap_components as dbc
 import dash_cytoscape as cyto
 import dash_leaflet as dl
@@ -53,7 +53,8 @@ from Initialize_FUSION import DatasetHandler, LayoutHandler
 class SlideHeatVis:
     def __init__(self,
                 app,
-                layout_dict,
+                layout_handler,
+                dataset_handler,
                 wsi,
                 cell_graphics_key,
                 asct_b_table,
@@ -62,17 +63,19 @@ class SlideHeatVis:
                 run_type = None):
                 
         # Saving all the layouts for this instance
-        self.layout_dict = layout_dict
+        self.layout_handler = layout_handler
         self.current_page = 'welcome'
+
+        self.dataset_handler = dataset_handler
 
         # Setting some app-related things
         self.app = app
         self.app.title = "FUSION"
-        self.app.layout = self.layout_dict['initial']
+        self.app.layout = self.layout_handler.current_initial_layout
         self.app._favicon = './assets/favicon.ico'
-        self.app.validation_layout = html.Div([
-            self.layout_dict[i] for i in self.layout_dict
-        ])
+
+        self.app.validation_layout = html.Div(self.layout_handler.validation_layout)
+        self.layout_dict = self.layout_handler.layout_dict
 
         self.run_type = run_type
 
@@ -272,6 +275,7 @@ class SlideHeatVis:
         )(self.add_manual_roi)
 
         self.all_layout_callbacks()
+        self.builder_callbacks()
 
         # Comment out this line when running on the web
         if self.run_type == 'local':
@@ -321,6 +325,188 @@ class SlideHeatVis:
                     [State(f'{page}-sidebar-offcanvas','is_open')],
                     prevent_initial_call=True
                 )(self.view_sidebar)
+
+    def builder_callbacks(self):
+
+        self.app.callback(
+            Input('dataset-table','selected_rows'),
+            [Output('selected-dataset-slides','children'),
+             Output('slide-metadata-plots','children')],
+             prevent_initial_call=True
+        )(self.plot_dataset_metadata)
+
+        self.app.callback(
+            [Input({'type':'meta-drop','index':MATCH},'value'),
+             Input({'type':'agg-meta-drop','index':MATCH},'value')],
+            Output({'type':'meta-plot','index':MATCH},'figure'),
+            prevent_initial_call=True
+        )(self.update_metadata_plot)
+
+        self.app.callback(
+            Input({'type':'slide-dataset-table','index':MATCH},'selected_rows'),
+            Output({'type':'current-slide-count','index':MATCH},'children')
+        )(self.update_current_slides)
+
+
+    def plot_dataset_metadata(self,selected_dataset_list):
+        # Extracting metadata from selected datasets and plotting
+        all_metadata_labels = []
+        all_metadata = []
+        slide_dataset_dict = []
+
+        for d in selected_dataset_list:
+
+            d_name = self.dataset_handler.dataset_names[d]
+            metadata_available = self.dataset_handler.get_dataset(d_name)['metadata']
+            slides_list = self.dataset_handler.get_dataset(d_name)['slide_info']
+
+            for s in slides_list:
+                
+                ftu_props = []
+                if 'geojson' in s['metadata_path']:
+
+                    slide_dataset_dict.append({'Slide Names':s['name'],'Dataset':d_name})
+
+                    with open(s['metadata_path']) as f:
+                        meta_json = geojson.load(f)
+
+                    for f in meta_json['features']:
+                        f['properties']['dataset'] = d_name
+                        f['properties']['slide_name'] = s['name']
+                        ftu_props.append(f['properties'])
+                all_metadata.extend(ftu_props)
+
+            all_metadata_labels.extend(metadata_available)
+
+        all_metadata_labels = np.unique(all_metadata_labels)
+        slide_dataset_df = pd.DataFrame.from_records(slide_dataset_dict)
+        self.current_slides = []
+        for i in slide_dataset_dict:
+            i['included'] = True
+            self.current_slides.append(i)
+
+        if not all_metadata==[]:
+            drop_div = html.Div([
+                dash_table.DataTable(
+                    id = {'type':'slide-dataset-table','index':0},
+                    columns = [{'name':i,'id':i,'deletable':False,'selectable':False} for i in slide_dataset_df],
+                    data = slide_dataset_df.to_dict('records'),
+                    editable = False,
+                    filter_action='native',
+                    sort_action = 'native',
+                    sort_mode = 'multi',
+                    column_selectable = 'single',
+                    row_selectable = 'multi',
+                    row_deletable = False,
+                    selected_columns = [],
+                    selected_rows = list(range(0,len(slide_dataset_df))),
+                    page_action='native',
+                    page_current=0,
+                    page_size=5,
+                    style_cell = {
+                        'overflow':'hidden',
+                        'textOverflow':'ellipsis',
+                        'maxWidth':0
+                    },
+                    tooltip_data = [
+                        {
+                            column: {'value':str(value),'type':'markdown'}
+                            for column, value in row.items()
+                        } for row in slide_dataset_df.to_dict('records')
+                    ],
+                    tooltip_duration = None
+                ),
+                html.Div(id={'type':'current-slide-count','index':0},children=[html.P(f'Included Slide Count: {len(slide_dataset_dict)}')]),
+                html.P('Select a Metadata feature for plotting'),
+                html.B(),
+                dcc.Dropdown(all_metadata_labels,id={'type':'meta-drop','index':0}),
+                html.B(),
+                html.P('Select whether to separate by dataset or slide'),
+                dcc.Dropdown(['By Dataset','By Slide'],'By Dataset',id={'type':'agg-meta-drop','index':0})
+            ])
+
+            self.selected_meta_df = pd.DataFrame.from_records(all_metadata)
+
+            plot_div = html.Div([
+                dcc.Graph(id = {'type':'meta-plot','index':0},figure = go.Figure())
+            ])
+
+
+            return drop_div, plot_div
+        else:
+            return html.Div(), html.Div()
+
+
+    def update_metadata_plot(self,new_meta,group_type):
+        
+        if not new_meta is None:
+            if group_type == 'By Dataset':
+                group_bar = 'dataset'
+                        
+            elif group_type == 'By Slide':
+                group_bar = 'slide_name'
+
+            plot_data = self.selected_meta_df.dropna(subset=[new_meta]).convert_dtypes()
+            print(plot_data[new_meta].dtypes)
+
+            if plot_data[new_meta].dtypes == float:
+                # Making violin plots 
+                fig = px.violin(plot_data[plot_data[new_meta]>0],x=group_bar,y=new_meta)
+            
+            elif plot_data[new_meta].dtypes == object:
+                print(plot_data[new_meta])
+
+                if new_meta == 'Main_Cell_Types':
+                    all_cell_types_df = pd.DataFrame.from_records(plot_data[new_meta].tolist())
+                    all_cell_types_df[group_bar] = plot_data[group_bar].tolist()
+                    print(all_cell_types_df)
+
+            else:
+                
+                # Finding counts of each unique value present
+                unique_values = plot_data[new_meta].unique()
+                print(unique_values)
+                groups_present = plot_data[group_bar].unique()
+                print(groups_present)
+                count_df = pd.DataFrame()
+                for g in groups_present:
+                    g_df = plot_data[plot_data[group_bar]==g]
+                    print(g_df.shape)
+                    g_counts = g_df[new_meta].value_counts().to_frame()
+                    g_counts[group_bar] = [g]*g_counts.shape[0]
+                    print(g_counts)
+
+                    if count_df.empty:
+                        count_df = g_counts
+                    else:
+                        count_df = pd.concat([count_df,g_counts],axis=0,ignore_index=False)
+
+                count_df = count_df.reset_index()
+                count_df.columns = [new_meta,'counts',group_bar]
+                print(count_df)
+
+                fig = px.bar(count_df,x = group_bar, y = 'counts',color=new_meta)
+
+
+
+            return go.Figure(fig)
+        else:
+            return go.Figure()
+
+    def update_current_slides(self,slide_rows):
+
+        # Updating the current slides
+        for s in range(0,len(self.current_slides)):
+            if s in slide_rows:
+                self.current_slides[s]['included'] = True
+            else:
+                self.current_slides[s]['included'] = False
+
+
+        print(f'Selected slide rows:{slide_rows}')
+        print(f'Included slides: {self.current_slides}')
+
+        return html.P(f'Included Slide Count: {len(slide_rows)}')
 
     def update_roi_pie(self,zoom,viewport,bounds):
 
@@ -1354,16 +1540,9 @@ def app(*args):
     layout_handler.gen_vis_layout(cell_names,slide_names,center_point,map_dict,spot_dict)
     layout_handler.gen_builder_layout(dataset_handler)
 
-    layout_dict = {
-        'initial':layout_handler.current_initial_layout,
-        'welcome':layout_handler.current_welcome_layout,
-        'vis': layout_handler.current_vis_layout,
-        'dataset-builder':layout_handler.current_builder_layout,
-        'dataset-uploader':layout_handler.current_uploader_layout,
-    }
 
     main_app = DashProxy(__name__,external_stylesheets=external_stylesheets,transforms = [MultiplexerTransform()])
-    vis_app = SlideHeatVis(main_app,layout_dict,wsi,cell_graphics_key,asct_b_table,metadata,slide_info_dict,run_type)
+    vis_app = SlideHeatVis(main_app,layout_handler,dataset_handler,wsi,cell_graphics_key,asct_b_table,metadata,slide_info_dict,run_type)
 
     if run_type=='web':
         return vis_app.app

@@ -27,9 +27,12 @@ import dash_leaflet as dl
 
 from dash_extensions.enrich import html
 from dash_extensions.javascript import arrow_function
-#import dash_leaflet.express as dlx
-#from dash_extensions.javascript import assign, Namespace, arrow_function
-#from dash_extensions.enrich import DashProxy, html, Input, Output, MultiplexerTransform, State
+
+from dataclasses import dataclass, field
+from typing import Callable, List, Union
+from dash.dependencies import handle_callback_args
+from dash.dependencies import Input, Output, State
+
 
 
 class LayoutHandler:
@@ -37,6 +40,9 @@ class LayoutHandler:
                  verbose = False):
         
         self.verbose = verbose
+
+        self.validation_layout = []
+        self.layout_dict = {}
 
         self.gen_initial_layout()
         self.gen_welcome_layout()
@@ -445,6 +451,8 @@ class LayoutHandler:
                     ],fluid=True,id='vis-container-content')
 
         self.current_vis_layout = vis_content
+        self.validation_layout.append(vis_content)
+        self.layout_dict['vis'] = vis_content
 
     def gen_builder_layout(self, dataset_handler):
 
@@ -489,7 +497,7 @@ class LayoutHandler:
         )
 
         # Table containing information on each datset in dataset_handler.dataset_reference
-        include_columns = ["name","organ","histology_type","stain","omics_type","description","metadata"]
+        include_columns = ["name","organ","histology_type","stain","omics_type","description"]
         combined_dataset_dict = []
         for d_name in dataset_handler.dataset_names:
             specific_dict = dataset_handler.get_dataset(d_name)
@@ -498,6 +506,11 @@ class LayoutHandler:
                 dataset_dict[i] = specific_dict[i]
 
             # Adding extra info determined from nested keys (ftu, slide_info)
+            if type(specific_dict['metadata'])==list:
+                dataset_dict['metadata'] = ','.join(specific_dict['metadata'])
+            else:
+                dataset_dict['metadata'] = specific_dict['metadata']
+
             dataset_dict['annotation_type'] = specific_dict['ftu']['annotation_type']
             dataset_dict['FTUs'] = ','.join(list(specific_dict['ftu']['names'].keys()))
             dataset_dict['N_Slides'] = len(specific_dict['slide_info'])
@@ -510,7 +523,7 @@ class LayoutHandler:
         table_layout = html.Div([
             dash_table.DataTable(
                 id = 'dataset-table',
-                columns = [{'name':i,'id':i,'deletable':True,'selectable':True} for i in dataset_df],
+                columns = [{'name':i,'id':i,'deletable':False,'selectable':True} for i in dataset_df],
                 data = dataset_df.to_dict('records'),
                 editable = False,
                 filter_action='native',
@@ -539,6 +552,7 @@ class LayoutHandler:
             )
         ])
 
+        
         builder_layout = html.Div([
             dbc.Container([
                 dbc.Row(sider),
@@ -554,15 +568,17 @@ class LayoutHandler:
                     table_layout,
                     html.H3('Select Slides to include in current session'),
                     html.Hr(),
-                    html.Div(id='slide-table'),
+                    dcc.Loading(html.Div(id='selected-dataset-slides')),
                     html.Hr(),
                     html.H3('Current Metadata'),
-                    html.Div(id='slide-metadata-plots')
+                    dcc.Loading(html.Div(id='slide-metadata-plots'))
                 ])
             ],fluid=True,id='dataset-builder-container-content')
         ])
 
         self.current_builder_layout = builder_layout
+        self.validation_layout.append(builder_layout)
+        self.layout_dict['dataset-builder'] = builder_layout
 
     def gen_uploader_layout(self):
 
@@ -622,6 +638,8 @@ class LayoutHandler:
         ])
 
         self.current_uploader_layout = uploader_layout
+        self.validation_layout.append(uploader_layout)
+        self.layout_dict['dataset-uploader'] = uploader_layout
 
     def gen_welcome_layout(self):
 
@@ -678,6 +696,8 @@ class LayoutHandler:
         ])
 
         self.current_welcome_layout = welcome_layout
+        self.validation_layout.append(welcome_layout)
+        self.layout_dict['welcome'] = welcome_layout
 
     def gen_initial_layout(self):
 
@@ -798,6 +818,8 @@ class LayoutHandler:
         ])
 
         self.current_initial_layout = welcome_layout
+        self.validation_layout.append(welcome_layout)
+        self.layout_dict['initial'] = welcome_layout
 
 
 
@@ -821,9 +843,37 @@ class DatasetHandler:
         return self.dataset_reference["datasets"][self.dataset_names.index(dataset_name)]
 
 
+@dataclass
+class Callback:
+    func: Callable
+    outputs: Union[Output,List[Output]]
+    inputs: Union[Input, List[Input]]
+    states: Union[State, List[State]] = field(default_factory=list)
+    kwargs: dict = field(default_factory=lambda: {"prevent_initial_call":False})
 
+class CallbackManager:
+    def __init__(self):
+        self._callbacks = []
 
+    def callback(self,*args,**kwargs):
+        output, inputs, state, prevent_initial_call = handle_callback_args(
+            args, kwargs
+        )
 
+        def wrapper(func):
+            self._callbacks.append(Callback(func,
+                                            output,
+                                            inputs,
+                                            state,
+                                            {'prevent_initial_call':prevent_initial_call}))
+
+        return wrapper
+    
+    def attach_to_app(self,app):
+        for callback in self._callbacks:
+            app.callback(
+                callback.outputs,callback.inputs,callback.states,**callback.kwargs
+            )(callback.func)
 
 
 
