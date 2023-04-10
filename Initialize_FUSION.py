@@ -842,6 +842,21 @@ class DatasetHandler:
         # dataset_name = name of dataset to grab information from
         return self.dataset_reference["datasets"][self.dataset_names.index(dataset_name)]
 
+    def get_slide_dataset(self,slide_name):
+        
+        dataset = None
+        for d in self.dataset_names:
+            d_slides = [i['name'] for i in self.dataset_reference['datasets'][d]['slide_info']]
+
+            if slide_name in d_slides:
+                dataset = d
+                break
+        
+        if dataset is not None:
+            return dataset
+        else:
+            raise ValueError
+
 
 @dataclass
 class Callback:

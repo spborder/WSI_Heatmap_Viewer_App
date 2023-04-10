@@ -337,17 +337,27 @@ class SlideHeatVis:
 
         self.app.callback(
             [Input({'type':'meta-drop','index':MATCH},'value'),
+             Input({'type':'cell-meta-drop','index':MATCH},'value'),
              Input({'type':'agg-meta-drop','index':MATCH},'value')],
-            Output({'type':'meta-plot','index':MATCH},'figure'),
+            [Output({'type':'meta-plot','index':MATCH},'figure'),
+             Output({'type':'cell-meta-drop','index':MATCH},'options'),
+             Output({'type':'cell-meta-drop','index':MATCH},'disabled')],
             prevent_initial_call=True
         )(self.update_metadata_plot)
 
         self.app.callback(
             Input({'type':'slide-dataset-table','index':MATCH},'selected_rows'),
-            Output({'type':'current-slide-count','index':MATCH},'children')
+            [Output({'type':'current-slide-count','index':MATCH},'children'),
+             Output({'type':'go-to-vis','index':MATCH},'disabled')]
         )(self.update_current_slides)
 
-
+        self.app.callback(
+            Input({'type':'go-to-vis','index':ALL},'n_clicks'),
+            [Output('dataset-builder-container-content','children'),
+            Output('slide-select','options')],
+            prevent_initial_call=True
+        )(self.build_to_vis)
+        
     def plot_dataset_metadata(self,selected_dataset_list):
         # Extracting metadata from selected datasets and plotting
         all_metadata_labels = []
@@ -419,10 +429,22 @@ class SlideHeatVis:
                 html.Div(id={'type':'current-slide-count','index':0},children=[html.P(f'Included Slide Count: {len(slide_dataset_dict)}')]),
                 html.P('Select a Metadata feature for plotting'),
                 html.B(),
-                dcc.Dropdown(all_metadata_labels,id={'type':'meta-drop','index':0}),
+                dbc.Row(
+                    id = {'type':'meta-row','index':0},
+                    children = [
+                        dbc.Col(dcc.Dropdown(all_metadata_labels,id={'type':'meta-drop','index':0})),
+                        dbc.Col(dcc.Dropdown(['Select Cell Type for Aggregated Cell State Plotting'],id={'type':'cell-meta-drop','index':0},disabled=True))
+                    ]
+                ),
                 html.B(),
                 html.P('Select whether to separate by dataset or slide'),
-                dcc.Dropdown(['By Dataset','By Slide'],'By Dataset',id={'type':'agg-meta-drop','index':0})
+                dbc.Row(
+                    id = {'type':'lower-row','index':0},
+                    children = [
+                        dbc.Col(dcc.Dropdown(['By Dataset','By Slide'],'By Dataset',id={'type':'agg-meta-drop','index':0})),
+                        dbc.Col(dbc.Button('Go to Visualization!',id = {'type':'go-to-vis','index':0},disabled=False))
+                    ]
+                )
             ])
 
             self.selected_meta_df = pd.DataFrame.from_records(all_metadata)
@@ -436,45 +458,76 @@ class SlideHeatVis:
         else:
             return html.Div(), html.Div()
 
-
-    def update_metadata_plot(self,new_meta,group_type):
+    def update_metadata_plot(self,new_meta,sub_meta,group_type):
         
+        cell_types_turn_off = True
+        cell_types_present = ['None']
         if not new_meta is None:
             if group_type == 'By Dataset':
-                group_bar = 'dataset'
-                        
+                group_bar = 'dataset'   
             elif group_type == 'By Slide':
                 group_bar = 'slide_name'
+            else:
+                group_bar = 'dataset'
 
             plot_data = self.selected_meta_df.dropna(subset=[new_meta]).convert_dtypes()
-            print(plot_data[new_meta].dtypes)
 
             if plot_data[new_meta].dtypes == float:
                 # Making violin plots 
-                fig = px.violin(plot_data[plot_data[new_meta]>0],x=group_bar,y=new_meta)
+                fig = go.Figure(px.violin(plot_data[plot_data[new_meta]>0],x=group_bar,y=new_meta))
             
             elif plot_data[new_meta].dtypes == object:
-                print(plot_data[new_meta])
 
                 if new_meta == 'Main_Cell_Types':
+
                     all_cell_types_df = pd.DataFrame.from_records(plot_data[new_meta].tolist())
+                    cell_types_present = all_cell_types_df.columns.to_list()
+                    cell_types_turn_off = False
+                    
                     all_cell_types_df[group_bar] = plot_data[group_bar].tolist()
-                    print(all_cell_types_df)
+
+                    if not sub_meta is None:
+                        fig = go.Figure(px.violin(all_cell_types_df,x=group_bar,y=sub_meta))
+                    else:
+                        fig = go.Figure()
+
+                if new_meta == 'Cell_States':
+                    all_cell_states_df = pd.DataFrame.from_records(plot_data[new_meta].tolist())
+
+                    cell_types_present = all_cell_states_df.columns.to_list()
+                    cell_types_turn_off = False
+
+                    if not sub_meta is None:
+                        specific_cell_states_df = pd.DataFrame.from_records(all_cell_states_df[sub_meta].tolist())
+
+                        groups_present = plot_data[group_bar].unique()
+                        count_df = pd.DataFrame()
+                        for g in groups_present:
+                            g_df = specific_cell_states_df[plot_data[group_bar]==g]
+                            g_counts = g_df.sum(axis=0).to_frame()
+                            g_counts[group_bar] = [g]*g_counts.shape[0]
+
+                            if count_df.empty:
+                                count_df = g_counts
+                            else:
+                                count_df = pd.concat([count_df,g_counts],axis=0,ignore_index=False)
+
+                        count_df = count_df.reset_index()
+                        count_df.columns = ['Cell State','Abundance',group_bar]
+
+                        fig = go.Figure(px.bar(count_df,x=group_bar,y='Abundance',color='Cell State'))
+                    else:
+                        fig = go.Figure()
 
             else:
                 
                 # Finding counts of each unique value present
-                unique_values = plot_data[new_meta].unique()
-                print(unique_values)
                 groups_present = plot_data[group_bar].unique()
-                print(groups_present)
                 count_df = pd.DataFrame()
                 for g in groups_present:
                     g_df = plot_data[plot_data[group_bar]==g]
-                    print(g_df.shape)
                     g_counts = g_df[new_meta].value_counts().to_frame()
                     g_counts[group_bar] = [g]*g_counts.shape[0]
-                    print(g_counts)
 
                     if count_df.empty:
                         count_df = g_counts
@@ -483,17 +536,19 @@ class SlideHeatVis:
 
                 count_df = count_df.reset_index()
                 count_df.columns = [new_meta,'counts',group_bar]
-                print(count_df)
 
-                fig = px.bar(count_df,x = group_bar, y = 'counts',color=new_meta)
+                fig = go.Figure(px.bar(count_df,x = group_bar, y = 'counts',color=new_meta))
 
-
-
-            return go.Figure(fig)
+            return fig, cell_types_present, cell_types_turn_off
         else:
-            return go.Figure()
+            return go.Figure(), cell_types_present, cell_types_turn_off
 
     def update_current_slides(self,slide_rows):
+
+        if len(slide_rows)>0:
+            turn_off_button = False
+        else:
+            turn_off_button = True
 
         # Updating the current slides
         for s in range(0,len(self.current_slides)):
@@ -506,8 +561,17 @@ class SlideHeatVis:
         print(f'Selected slide rows:{slide_rows}')
         print(f'Included slides: {self.current_slides}')
 
-        return html.P(f'Included Slide Count: {len(slide_rows)}')
+        return html.P(f'Included Slide Count: {len(slide_rows)}'), turn_off_button
 
+    def build_to_vis(self,butt_click):
+
+        slide_list = []
+        for s in self.current_slides:
+            if s['included']:
+                slide_list.append(s['name'])
+            
+        return self.layout_dict['vis'],slide_list
+    
     def update_roi_pie(self,zoom,viewport,bounds):
 
         # Making a box-poly from the bounds
@@ -1098,9 +1162,13 @@ class SlideHeatVis:
     
     def ingest_wsi(self,slide_name):
 
-        new_key_name = self.slide_info_dict[slide_name]['key_name']
-        old_key_name = self.wsi.slide_info_dict['key_name']
-        new_url = self.wsi.image_url.replace(old_key_name,new_key_name)
+        new_slide_key_name = self.slide_info_dict[slide_name]['key_name']
+        old_slide_key_name = self.wsi.slide_info_dict['key_name']
+
+        new_dataset_key_name = self.dataset_handler.get_dataset(self.dataset_handler.get_slide_dataset(slide_name))['key_name']
+        old_dataset_key_name = self.dataset_handler.get_dataset(self.dataset_handler.get_slide_dataset[self.wsi.slide_name])['key_name']
+
+        new_url = self.wsi.image_url.replace(old_slide_key_name,new_slide_key_name).replace(old_dataset_key_name,new_dataset_key_name)
 
         old_ftu_path = self.wsi.ftu_path
         old_spot_path = self.wsi.spot_path
@@ -1429,7 +1497,9 @@ def app(*args):
         for slide in dataset_info_dict['slide_info']:
             slide_info_dict[slide['name']] = slide
 
-        slide_url = 'http://localhost:5000/rgb/'+slide_info_dict[slide_name]["key_name"]+'/{z}/{x}/{y}.png?r=B04&r_range=[46,168]&g=B03&g_range=[46,168]&b=B02&b_range=[46,168]&'
+        dataset_key = dataset_info_dict['key_name']
+
+        slide_url = 'http://localhost:5000/rgb/'+dataset_key+'/'+slide_info_dict[slide_name]["key_name"]+'/{z}/{x}/{y}.png?r=B04&r_range=[46,168]&g=B03&g_range=[46,168]&b=B02&b_range=[46,168]&'
         ftu_path = base_dir+slide_name.replace('.svs','_scaled.geojson')
         spot_path = base_dir+slide_name.replace('.svs','_Spots_scaled.geojson')
         cell_graphics_path = 'graphic_reference.json'

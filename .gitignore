@@ -5,5 +5,5 @@ Cluster_Viewer.py
 *.cwl
 *.json
 Process_Terracotta.py
-*.cypthon-36.pyc
 *.sqlite
+__pycache__/Initialize_FUSION.cpython-36.pyc
