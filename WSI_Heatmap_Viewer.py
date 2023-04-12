@@ -75,7 +75,6 @@ class SlideHeatVis:
         self.app._favicon = './assets/favicon.ico'
 
         self.app.validation_layout = html.Div(self.layout_handler.validation_layout)
-        self.layout_dict = self.layout_handler.layout_dict
 
         self.run_type = run_type
 
@@ -83,6 +82,14 @@ class SlideHeatVis:
         self.metadata = cluster_metadata
 
         self.slide_info_dict = slide_info_dict
+        self.current_slides = [
+            {
+            'Slide Names': i,
+             'Dataset':self.dataset_handler.get_slide_dataset(i),
+             'included':True
+             }
+             for i in list(self.slide_info_dict.keys())
+        ]
         self.wsi = wsi
 
         # More print statements:
@@ -114,7 +121,7 @@ class SlideHeatVis:
         }
 
         self.current_ftu_layers = list(self.wsi.ftus.keys())
-        self.current_ftus = list(self.wsi.ftus.keys())
+        self.current_ftus = self.wsi.ftus
         self.pie_ftu = self.current_ftu_layers[-1]
         self.pie_chart_order = self.current_ftu_layers.copy()
 
@@ -192,16 +199,16 @@ class SlideHeatVis:
         )
 
         self.app.callback(
-            [Output('roi-pie','figure'),Output('state-bar','figure')],
-            [Input('slide-map','zoom'),Input('slide-map','viewport')],
-            State('slide-map','bounds'),
-        )(self.update_roi_pie)
-
-        self.app.callback(
             [Output('layer-control','children'),Output('colorbar-div','children')],
             [Input('cell-drop','value'),Input('vis-slider','value')],
         )(self.update_cell)
-        
+
+        self.app.callback(
+            [Output('roi-pie','figure'),Output('state-bar','figure')],
+            [Input('slide-map','zoom'),Input('slide-map','viewport')],
+            State('slide-map','bounds'),
+        )(self.update_roi_pie)      
+
         self.app.callback(
             [Output('cell-graphic','src'),Output('cell-hierarchy','elements')],
             Input('cell-cards-drop','value'),
@@ -234,7 +241,7 @@ class SlideHeatVis:
         self.app.callback(
             [Output('slide-tile','url'), Output('layer-control','children'), Output('slide-map','center'),
             Output('roi-pie','figure'),Output('state-bar','figure')],
-            Input('slide-select','value'),
+            Input({'type':'slide-select','index':ALL},'value'),
             prevent_initial_call=True
         )(self.ingest_wsi)
         
@@ -295,36 +302,40 @@ class SlideHeatVis:
         return is_open
 
     def update_page(self,pathname):
-        
-        if pathname.replace('/','') in self.layout_dict:
+        print(pathname)
+        if pathname.replace('/','') in self.layout_handler.layout_dict:
             
             self.current_page = pathname.replace('/','')
 
-            return self.layout_dict[self.current_page]
+            slide_options = [{'label':i['Slide Names'],'value':i['Slide Names']} for i in self.current_slides if i['included']]
+            print(slide_options)
+
+            return [self.layout_handler.layout_dict[self.current_page], [slide_options], self.layout_handler.description_dict[self.current_page]]
 
     def all_layout_callbacks(self):
 
         # Adding callbacks for items in every page
-        for page in self.layout_dict:
-            if not page == 'initial':
-                self.app.callback(
-                    Output(f'{page}-container-content','children'),
-                    [Input('url','pathname')],
-                )(self.update_page)
+        self.app.callback(
+            [Output('container-content','children'),
+             Output({'type':'slide-select','index':ALL},'options'),
+             Output('descrip','children')],
+             Input('url','pathname'),
+             prevent_initial_call = True
+        )(self.update_page)
 
-                self.app.callback(
-                    Output(f'{page}-collapse-content','is_open'),
-                    Input(f'{page}-collapse-descrip','n_clicks'),
-                    [State(f'{page}-collapse-content','is_open')],
-                    prevent_initial_call=True
-                )(self.view_instructions)
+        self.app.callback(
+            Output({'type':'collapse-content','index':MATCH},'is_open'),
+            Input({'type':'collapse-descrip','index':MATCH},'n_clicks'),
+            [State({'type':'collapse-content','index':MATCH},'is_open')],
+            prevent_initial_call=True
+        )(self.view_instructions)
 
-                self.app.callback(
-                    Output(f'{page}-sidebar-offcanvas','is_open'),
-                    Input(f'{page}-sidebar-button','n_clicks'),
-                    [State(f'{page}-sidebar-offcanvas','is_open')],
-                    prevent_initial_call=True
-                )(self.view_sidebar)
+        self.app.callback(
+            Output({'type':'sidebar-offcanvas','index':MATCH},'is_open'),
+            Input({'type':'sidebar-button','index':MATCH},'n_clicks'),
+            [State({'type':'sidebar-offcanvas','index':MATCH},'is_open')],
+            prevent_initial_call=True
+        )(self.view_sidebar)
 
     def builder_callbacks(self):
 
@@ -347,17 +358,9 @@ class SlideHeatVis:
 
         self.app.callback(
             Input({'type':'slide-dataset-table','index':MATCH},'selected_rows'),
-            [Output({'type':'current-slide-count','index':MATCH},'children'),
-             Output({'type':'go-to-vis','index':MATCH},'disabled')]
+            Output({'type':'current-slide-count','index':MATCH},'children')
         )(self.update_current_slides)
 
-        self.app.callback(
-            Input({'type':'go-to-vis','index':ALL},'n_clicks'),
-            [Output('dataset-builder-container-content','children'),
-            Output('slide-select','options')],
-            prevent_initial_call=True
-        )(self.build_to_vis)
-        
     def plot_dataset_metadata(self,selected_dataset_list):
         # Extracting metadata from selected datasets and plotting
         all_metadata_labels = []
@@ -441,8 +444,7 @@ class SlideHeatVis:
                 dbc.Row(
                     id = {'type':'lower-row','index':0},
                     children = [
-                        dbc.Col(dcc.Dropdown(['By Dataset','By Slide'],'By Dataset',id={'type':'agg-meta-drop','index':0})),
-                        dbc.Col(dbc.Button('Go to Visualization!',id = {'type':'go-to-vis','index':0},disabled=False))
+                        dbc.Col(dcc.Dropdown(['By Dataset','By Slide'],'By Dataset',id={'type':'agg-meta-drop','index':0}))
                     ]
                 )
             ])
@@ -557,21 +559,8 @@ class SlideHeatVis:
             else:
                 self.current_slides[s]['included'] = False
 
-
-        print(f'Selected slide rows:{slide_rows}')
-        print(f'Included slides: {self.current_slides}')
-
         return html.P(f'Included Slide Count: {len(slide_rows)}'), turn_off_button
-
-    def build_to_vis(self,butt_click):
-
-        slide_list = []
-        for s in self.current_slides:
-            if s['included']:
-                slide_list.append(s['name'])
-            
-        return self.layout_dict['vis'],slide_list
-    
+        
     def update_roi_pie(self,zoom,viewport,bounds):
 
         # Making a box-poly from the bounds
@@ -1161,12 +1150,13 @@ class SlideHeatVis:
         return f'Label: {label}', dcc.Link(f'ID: {id}', href = new_url), f'Notes: {notes}'
     
     def ingest_wsi(self,slide_name):
+        slide_name = slide_name[0]
 
         new_slide_key_name = self.slide_info_dict[slide_name]['key_name']
         old_slide_key_name = self.wsi.slide_info_dict['key_name']
 
         new_dataset_key_name = self.dataset_handler.get_dataset(self.dataset_handler.get_slide_dataset(slide_name))['key_name']
-        old_dataset_key_name = self.dataset_handler.get_dataset(self.dataset_handler.get_slide_dataset[self.wsi.slide_name])['key_name']
+        old_dataset_key_name = self.dataset_handler.get_dataset(self.dataset_handler.get_slide_dataset(self.wsi.slide_name))['key_name']
 
         new_url = self.wsi.image_url.replace(old_slide_key_name,new_slide_key_name).replace(old_dataset_key_name,new_dataset_key_name)
 

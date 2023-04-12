@@ -43,6 +43,7 @@ class LayoutHandler:
 
         self.validation_layout = []
         self.layout_dict = {}
+        self.description_dict = {}
 
         self.gen_initial_layout()
         self.gen_welcome_layout()
@@ -53,6 +54,7 @@ class LayoutHandler:
         # Main visualization layout, used in initialization and when switching to the viewer
 
         # Sidebar
+        """
         sider = html.Div([
             dbc.Offcanvas([
                 html.Img(id='vis-logo-side',src=('./assets/Lab_Logo.png'),height='280px',width='250px'),
@@ -64,8 +66,19 @@ class LayoutHandler:
                 ],vertical=True,pills=True)], id='vis-sidebar-offcanvas',style={'background-color':"#f8f9fa"}
             )
         ])
-        
+        """
+
         # Description and instructions card
+        vis_description = [
+            html.P('FUSION was designed by the members of the CMI Lab at the University of Florida in collaboration with HuBMAP'),
+            html.Hr(),
+            html.P('We hope that this tool provides users with an immersive visualization method for understanding the roles of specific cell types in combination with different functional tissue units'),
+            html.Hr(),
+            html.P('As this tool is still under active development, we welcome any and all feedback. Use the "User Survey" link above to provide comments. Thanks!'),
+            html.Hr(),
+            html.P('Happy fusing!')         
+        ]
+        """
         description = dbc.Card(
             children = [
                 #dbc.CardHeader("Description and Instructions"),
@@ -93,7 +106,8 @@ class LayoutHandler:
                 ])
             ],style={'marginBottom':'20px'}
         )
-        
+        """
+
         # Slide selection
         slide_select = dbc.Card(
             id = 'slide-select-card',
@@ -114,7 +128,7 @@ class LayoutHandler:
                                 dcc.Dropdown(
                                     slides_available,
                                     slides_available[0],
-                                    id = 'slide-select'
+                                    id = {'type':'slide-select','index':0}
                                 )
                             ), md=8
                         )
@@ -425,34 +439,26 @@ class LayoutHandler:
             )
         ]
 
-
         # Separately outputting the functional components of the application for later reference when switching pages
-        vis_content = dbc.Container([
-                        dbc.Row(sider),
-                        dbc.Row([
-                            dbc.Row(
-                                id = 'vis-descrip-and-instruct',
-                                children = [description]
-                            ),
-                            html.B(),
-                            dbc.Row(
-                                id = 'slide-select-row',
-                                children = [slide_select]
-                            ),
-                            html.B(),
-                            dbc.Row(
-                                id="app-content",
-                                children=[
-                                    dbc.Col(wsi_view,md=6),
-                                    dbc.Col(tools,md=6)
-                                ],style={"height":"100vh"}
-                            )
-                        ])
-                    ],fluid=True,id='vis-container-content')
+        vis_content = [
+            dbc.Row(
+                id = 'slide-select-row',
+                children = [slide_select]
+            ),
+            html.B(),
+            dbc.Row(
+                id="app-content",
+                children=[
+                    dbc.Col(wsi_view,md=6),
+                    dbc.Col(tools,md=6)
+                ],style={"height":"100vh"}
+            )
+        ]
 
         self.current_vis_layout = vis_content
         self.validation_layout.append(vis_content)
         self.layout_dict['vis'] = vis_content
+        self.description_dict['vis'] = vis_description
 
     def gen_builder_layout(self, dataset_handler):
 
@@ -461,6 +467,7 @@ class LayoutHandler:
         # current viewing instance.
 
         # Sidebar
+        """
         sider = html.Div([
             dbc.Offcanvas([
                 html.Img(id='dataset-builder-logo-side',src=('./assets/Lab_Logo.png'),height='280px',width='250px'),
@@ -472,8 +479,12 @@ class LayoutHandler:
                 ],vertical=True,pills=True)], id='dataset-builder-sidebar-offcanvas',style={'background-color':"#f8f9fa"}
             )
         ])
-        
+        """
         # Description and instructions card
+        builder_description = [
+            html.P('Happy fusing!')
+        ]
+        """
         description = dbc.Card(
             children = [
                 #dbc.CardHeader("Description and Instructions"),
@@ -495,7 +506,7 @@ class LayoutHandler:
                 ])
             ],style={'marginBottom':'20px'}
         )
-
+        """
         # Table containing information on each datset in dataset_handler.dataset_reference
         include_columns = ["name","organ","histology_type","stain","omics_type","description"]
         combined_dataset_dict = []
@@ -553,16 +564,8 @@ class LayoutHandler:
         ])
 
         
-        builder_layout = html.Div([
-            dbc.Container([
-                dbc.Row(sider),
-                html.H1('Dataset Builder'),
-                dbc.Row([
-                    dbc.Row(
-                        id = 'dataset-builder-descrip-and-instruct',
-                        children = [description]
-                    ),
-                    html.Hr(),
+        builder_layout = [
+                    dcc.Dropdown(['blah'],id={'type':'slide-select','index':1},style={'display':'none'}),
                     html.H3('Select a Dataset to add slides to current session'),
                     html.Hr(),
                     table_layout,
@@ -572,13 +575,12 @@ class LayoutHandler:
                     html.Hr(),
                     html.H3('Current Metadata'),
                     dcc.Loading(html.Div(id='slide-metadata-plots'))
-                ])
-            ],fluid=True,id='dataset-builder-container-content')
-        ])
+                ]
 
         self.current_builder_layout = builder_layout
         self.validation_layout.append(builder_layout)
         self.layout_dict['dataset-builder'] = builder_layout
+        self.description_dict['dataset-builder'] = builder_description
 
     def gen_uploader_layout(self):
 
@@ -588,6 +590,7 @@ class LayoutHandler:
 
 
         # Sidebar
+        """
         sider = html.Div([
             dbc.Offcanvas([
                 html.Img(id='dataset-uploader-logo-side',src=('./assets/Lab_Logo.png'),height='280px',width='250px'),
@@ -599,53 +602,48 @@ class LayoutHandler:
                 ],vertical=True,pills=True)], id='dataset-uploader-sidebar-offcanvas',style={'background-color':"#f8f9fa"}
             )
         ])
-        
+        """
         # Description and instructions card
+        uploader_description = [
+            html.P('Happy fusing!')
+        ]
+        """
         description = dbc.Card(
             children = [
                 #dbc.CardHeader("Description and Instructions"),
                 dbc.CardBody([
-                    dbc.Button('Open Sidebar',id='dataset-uploader-sidebar-button',className='mb-3',color='primary',n_clicks=0,style={'marginRight':'5px'}),
-                    dbc.Button("View/Hide Description",id='dataset-uploader-collapse-descrip',className='mb-3',color='primary',n_clicks=0,style={'marginLeft':'5px'}),
+                    dbc.Button('Open Sidebar',id={'type':'sidebar-button','index':4},className='mb-3',color='primary',n_clicks=0,style={'marginRight':'5px'}),
+                    dbc.Button("View/Hide Description",id={'type':'collapse-descrip','index':4},className='mb-3',color='primary',n_clicks=0,style={'marginLeft':'5px'}),
                     dbc.Collapse(
                         dbc.Row(
                             dbc.Col(
                                 html.Div(
-                                    id = 'dataset-uploader-descrip',
-                                    children = [
-                                        html.P('Happy fusing!')
-                                    ],style={'fontSize':10}
+                                    id = 'descrip',
+                                    children = uploader_description,
+                                    style={'fontSize':10}
                                 )
                             )
-                        ),id='dataset-uploader-collapse-content',is_open=False
+                        ),id={'type':'collapse-content','index':4},is_open=False
                     )
                 ])
             ],style={'marginBottom':'20px'}
         )
-
-        uploader_layout = html.Div([
-            dbc.Container([
-                dbc.Row(sider),
+        """
+        uploader_layout =[
                 html.H1('Dataset Uploader'),
-                dbc.Row([
-                    dbc.Row(
-                        id = 'dataset-uploader-descrip-and-instruct',
-                        children = [description]
-                    ),
-                    html.B()
-                ])
-            ],fluid=True,id='dataset-uploader-container-content')
-        ])
-
+                dcc.Dropdown(['blah'],id={'type':'slide-select','index':4},style={'display':'none'}),
+            ]
         self.current_uploader_layout = uploader_layout
         self.validation_layout.append(uploader_layout)
         self.layout_dict['dataset-uploader'] = uploader_layout
+        self.description_dict['dataset-uploader'] = uploader_description
 
     def gen_welcome_layout(self):
 
         # welcome layout after initialization and information and buttons to go to other areas
 
         # Sidebar
+        """
         sider = html.Div([
             dbc.Offcanvas([
                 html.Img(id='welcome-logo-side',src=('./assets/Lab_Logo.png'),height='280px',width='250px'),
@@ -654,11 +652,17 @@ class LayoutHandler:
                     dbc.NavLink('FUSION Visualizer',href='/vis',active='exact'),
                     dbc.NavLink('Dataset Builder',href='/dataset-builder',active='exact'),
                     dbc.NavLink('Dataset Uploader',href='/dataset-uploader',active='exact')
-                ],vertical=True,pills=True)], id='welcome-sidebar-offcanvas',style={'background-color':"#f8f9fa"}
+                ],vertical=True,pills=True)], id={'type':'sidebar-offcanvas','index':0},style={'background-color':"#f8f9fa"}
             )
         ])
-        
+        """
+
         # Description and instructions card
+        welcome_description = [
+            html.P('Happy fusing!')
+        ]
+        
+        """
         description = dbc.Card(
             children = [
                 #dbc.CardHeader("Description and Instructions"),
@@ -669,10 +673,9 @@ class LayoutHandler:
                         dbc.Row(
                             dbc.Col(
                                 html.Div(
-                                    id = 'welcome-descrip',
-                                    children = [
-                                        html.P('Happy fusing!')
-                                    ],style={'fontSize':10}
+                                    id = 'descrip',
+                                    children = welcome_description,
+                                    style={'fontSize':10}
                                 )
                             )
                         ),id='welcome-collapse-content',is_open=False
@@ -680,24 +683,16 @@ class LayoutHandler:
                 ])
             ],style={'marginBottom':'20px'}
         )
-
-        welcome_layout = html.Div([
-            dbc.Container([
+        """
+        welcome_layout = [
                 html.H1('Welcome to FUSION!'),
-                dbc.Row(dbc.Col(html.Div(sider))),
-                dbc.Row([
-                    dbc.Row(
-                        id = 'welcome-descrip-and-instruct',
-                        children = [description]
-                    ),
-                    html.B()
-                ])
-            ],fluid=True,id='welcome-container-content')
-        ])
-
+                dcc.Dropdown(['blah'],id={'type':'slide-select','index':3},style={'display':'none'}),
+            ]
+        
         self.current_welcome_layout = welcome_layout
         self.validation_layout.append(welcome_layout)
         self.layout_dict['welcome'] = welcome_layout
+        self.description_dict['welcome'] = welcome_description
 
     def gen_initial_layout(self):
 
@@ -773,28 +768,31 @@ class LayoutHandler:
                     dbc.NavLink('FUSION Visualizer',href='/vis',active='exact'),
                     dbc.NavLink('Dataset Builder',href='/dataset-builder',active='exact'),
                     dbc.NavLink('Dataset Uploader',href='/dataset-uploader',active='exact')
-                ],vertical=True,pills=True)], id='welcome-sidebar-offcanvas',style={'background-color':"#f8f9fa"}
+                ],vertical=True,pills=True)], id={'type':'sidebar-offcanvas','index':0},style={'background-color':"#f8f9fa"}
             )
         ])
         
         # Description and instructions card
+        initial_description = [
+            html.P('Happy fusing!')
+        ]
+
         description = dbc.Card(
             children = [
                 #dbc.CardHeader("Description and Instructions"),
                 dbc.CardBody([
-                    dbc.Button('Open Sidebar',id='welcome-sidebar-button',className='mb-3',color='primary',n_clicks=0,style={'marginRight':'5px'}),
-                    dbc.Button("View/Hide Description",id='welcome-collapse-descrip',className='mb-3',color='primary',n_clicks=0,style={'marginLeft':'5px'}),
+                    dbc.Button('Open Sidebar',id={'type':'sidebar-button','index':0},className='mb-3',color='primary',n_clicks=0,style={'marginRight':'5px'}),
+                    dbc.Button("View/Hide Description",id={'type':'collapse-descrip','index':0},className='mb-3',color='primary',n_clicks=0,style={'marginLeft':'5px'}),
                     dbc.Collapse(
                         dbc.Row(
                             dbc.Col(
                                 html.Div(
-                                    id = 'welcome-descrip',
-                                    children = [
-                                        html.P('Happy fusing!')
-                                    ],style={'fontSize':10}
+                                    id = 'descrip',
+                                    children = initial_description,
+                                    style={'fontSize':10}
                                 )
                             )
-                        ),id='welcome-collapse-content',is_open=False
+                        ),id={'type':'collapse-content','index':0},is_open=False
                     )
                 ])
             ],style={'marginBottom':'20px'}
@@ -804,23 +802,22 @@ class LayoutHandler:
             dcc.Location(id='url'),
             header,
             html.B(),
+            dbc.Row(dbc.Col(html.Div(sider))),
+            html.B(),
+            dbc.Row(
+                id = 'descrip-and-instruct',
+                children = description
+            ),
             dbc.Container([
                 html.H1('Welcome to FUSION!'),
-                dbc.Row(dbc.Col(html.Div(sider))),
-                dbc.Row([
-                    dbc.Row(
-                        id = 'welcome-descrip-and-instruct',
-                        children = [description]
-                    ),
-                    html.B()
-                ])
-            ],fluid=True,id='welcome-container-content')
+                dcc.Dropdown(['blah'],id={'type':'slide-select','index':2},style={'display':'none'}),
+                ],fluid=True,id='container-content')
         ])
 
         self.current_initial_layout = welcome_layout
         self.validation_layout.append(welcome_layout)
         self.layout_dict['initial'] = welcome_layout
-
+        self.description_dict['initial'] = initial_description
 
 
 class DatasetHandler:
@@ -845,11 +842,12 @@ class DatasetHandler:
     def get_slide_dataset(self,slide_name):
         
         dataset = None
-        for d in self.dataset_names:
+        for d in range(len(self.dataset_names)):
+
             d_slides = [i['name'] for i in self.dataset_reference['datasets'][d]['slide_info']]
 
             if slide_name in d_slides:
-                dataset = d
+                dataset = self.dataset_names[d]
                 break
         
         if dataset is not None:
