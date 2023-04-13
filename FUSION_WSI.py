@@ -30,7 +30,8 @@ class WholeSlide:
         self.slide_info_dict = slide_info_dict
         self.slide_bounds = self.slide_info_dict['bounds']
         self.slide_name = slide_name
-        self.slide_path = self.slide_info_dict['slide_path']
+        if 'slide_path' in self.slide_info_dict:
+            self.slide_path = self.slide_info_dict['slide_path']
 
         self.morphometrics_list = ['Area','Mesangial Area','Mesangial Fraction','Luminal Fraction','Arterial Area','Average TBM Thickness','Average Cell Thickness']
 

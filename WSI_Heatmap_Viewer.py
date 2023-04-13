@@ -35,7 +35,7 @@ from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 from matplotlib import cm
 
-from dash import dcc, ctx, Dash, MATCH, ALL, dash_table
+from dash import dcc, ctx, Dash, MATCH, ALL, dash_table, exceptions, callback_context
 import dash_bootstrap_components as dbc
 import dash_cytoscape as cyto
 import dash_leaflet as dl
@@ -241,7 +241,7 @@ class SlideHeatVis:
         self.app.callback(
             [Output('slide-tile','url'), Output('layer-control','children'), Output('slide-map','center'),
             Output('roi-pie','figure'),Output('state-bar','figure')],
-            Input({'type':'slide-select','index':ALL},'value'),
+            Input('slide-select','value'),
             prevent_initial_call=True
         )(self.ingest_wsi)
         
@@ -306,19 +306,25 @@ class SlideHeatVis:
         if pathname.replace('/','') in self.layout_handler.layout_dict:
             
             self.current_page = pathname.replace('/','')
+            container_content = self.layout_handler.layout_dict[self.current_page]
+            description = self.layout_handler.description_dict[self.current_page]
 
-            slide_options = [{'label':i['Slide Names'],'value':i['Slide Names']} for i in self.current_slides if i['included']]
-            print(slide_options)
+            if self.current_page == 'vis':
+                slide_style = {'marginBottom':'20px','display':'inline-block'}
+            else:
+                slide_style = {'display':'none'}
 
-            return [self.layout_handler.layout_dict[self.current_page], [slide_options], self.layout_handler.description_dict[self.current_page]]
+            print(slide_style)
+
+            return container_content, description, slide_style
 
     def all_layout_callbacks(self):
 
         # Adding callbacks for items in every page
         self.app.callback(
             [Output('container-content','children'),
-             Output({'type':'slide-select','index':ALL},'options'),
-             Output('descrip','children')],
+             Output('descrip','children'),
+             Output('slide-select-card','style')],
              Input('url','pathname'),
              prevent_initial_call = True
         )(self.update_page)
@@ -340,9 +346,12 @@ class SlideHeatVis:
     def builder_callbacks(self):
 
         self.app.callback(
-            Input('dataset-table','selected_rows'),
+            [Input('dataset-table','selected_rows'),
+             Input({'type':'slide-dataset-table','index':ALL},'selected_rows')],
             [Output('selected-dataset-slides','children'),
-             Output('slide-metadata-plots','children')],
+             Output('slide-metadata-plots','children'),
+             Output({'type':'current-slide-count','index':ALL},'children'),
+             Output('slide-select','options')],
              prevent_initial_call=True
         )(self.plot_dataset_metadata)
 
@@ -356,12 +365,7 @@ class SlideHeatVis:
             prevent_initial_call=True
         )(self.update_metadata_plot)
 
-        self.app.callback(
-            Input({'type':'slide-dataset-table','index':MATCH},'selected_rows'),
-            Output({'type':'current-slide-count','index':MATCH},'children')
-        )(self.update_current_slides)
-
-    def plot_dataset_metadata(self,selected_dataset_list):
+    def plot_dataset_metadata(self,selected_dataset_list,slide_rows):
         # Extracting metadata from selected datasets and plotting
         all_metadata_labels = []
         all_metadata = []
@@ -455,10 +459,30 @@ class SlideHeatVis:
                 dcc.Graph(id = {'type':'meta-plot','index':0},figure = go.Figure())
             ])
 
-
-            return drop_div, plot_div
         else:
-            return html.Div(), html.Div()
+            drop_div = html.Div()
+            plot_div = html.Div()
+
+        print(ctx.triggered_id)
+        print(callback_context.outputs_list)
+
+        callback_outputs = callback_context.outputs_list
+
+        if ctx.triggered_id == 'dataset-table':
+            slide_rows = [list(range(len(slide_dataset_dict)))]
+
+        if len(slide_rows)>0:
+            current_slide_count, slide_select_options = self.update_current_slides(slide_rows)
+        else:
+            current_slide_count = [html.P()]
+            slide_select_options = [{'label':'blah','value':'blah'}]
+
+        if callback_outputs[2] == []:
+
+            return drop_div,plot_div,[],slide_select_options
+        else:
+
+            return drop_div,plot_div,current_slide_count,slide_select_options
 
     def update_metadata_plot(self,new_meta,sub_meta,group_type):
         
@@ -547,20 +571,24 @@ class SlideHeatVis:
 
     def update_current_slides(self,slide_rows):
 
-        if len(slide_rows)>0:
-            turn_off_button = False
-        else:
-            turn_off_button = True
-
         # Updating the current slides
+        print(f'triggered_id:{ctx.triggered_id}')
+        print(f'outputs list: {callback_context.outputs_list}')
+        print(f'self.current_slides:{self.current_slides}')
+        print(f'slide_rows: {slide_rows}')
+        slide_rows = slide_rows[0]
         for s in range(0,len(self.current_slides)):
             if s in slide_rows:
                 self.current_slides[s]['included'] = True
             else:
                 self.current_slides[s]['included'] = False
+        slide_options = [{'label':i['Slide Names'],'value':i['Slide Names']} for i in self.current_slides if i['included']]
 
-        return html.P(f'Included Slide Count: {len(slide_rows)}'), turn_off_button
-        
+        if slide_options == []:
+            slide_options = [{'label':'blah','value':'blah'}]
+
+        return [html.P(f'Included Slide Count: {len(slide_rows)}')], slide_options
+
     def update_roi_pie(self,zoom,viewport,bounds):
 
         # Making a box-poly from the bounds
@@ -1150,7 +1178,8 @@ class SlideHeatVis:
         return f'Label: {label}', dcc.Link(f'ID: {id}', href = new_url), f'Notes: {notes}'
     
     def ingest_wsi(self,slide_name):
-        slide_name = slide_name[0]
+
+        print(f'Slide selected: {slide_name}')
 
         new_slide_key_name = self.slide_info_dict[slide_name]['key_name']
         old_slide_key_name = self.wsi.slide_info_dict['key_name']
@@ -1310,13 +1339,14 @@ class SlideHeatVis:
             width = int(s['Max_x_coord'])-min_x
             height = int(s['Max_y_coord'])-min_y
 
-            slide_path = self.slide_info_dict[s['image_id']+'.svs']['slide_path']
+            if 'slide_path' in self.slide_info_dict[s['image_id']+'.svs']:
+                slide_path = self.slide_info_dict[s['image_id']+'.svs']['slide_path']
 
-            wsi = openslide.OpenSlide(slide_path)
-            slide_region = wsi.read_region((min_x,min_y),0,(width,height))
-            openslide.OpenSlide.close(wsi)
+                wsi = openslide.OpenSlide(slide_path)
+                slide_region = wsi.read_region((min_x,min_y),0,(width,height))
+                openslide.OpenSlide.close(wsi)
 
-            img_list.append(resize(np.uint8(np.array(slide_region))[:,:,0:3],output_shape=(256,256,3)))
+                img_list.append(resize(np.uint8(np.array(slide_region))[:,:,0:3],output_shape=(256,256,3)))
 
         return img_list        
 
@@ -1474,28 +1504,36 @@ def app(*args):
         # For local testing
         base_dir = '/mnt/c/Users/Sam/Desktop/HIVE/SpotNet_NonEssential_Files/WSI_Heatmap_Viewer_App/assets/slide_info/'
 
+        """
         available_slides = sorted(glob(base_dir+'*.svs'))
         slide_names = [i.split('/')[-1] for i in available_slides]
         slide_name = slide_names[0]
-        
+        """
+
         # Loading initial dataset
         dataset_reference_path = 'dataset_reference.json'
         dataset_handler = DatasetHandler(dataset_reference_path)
 
-        dataset_info_dict = dataset_handler.get_dataset('Indiana U.')
+        dataset_info_dict = dataset_handler.get_dataset('Indiana U. New Set')
+
+        slide_names = []
         slide_info_dict = {}
         for slide in dataset_info_dict['slide_info']:
             slide_info_dict[slide['name']] = slide
+            slide_names.append(slide['name'])
 
+        slide_name = slide_names[0]
+        slide_extension = slide_name.split('.')[-1]
         dataset_key = dataset_info_dict['key_name']
 
         slide_url = 'http://localhost:5000/rgb/'+dataset_key+'/'+slide_info_dict[slide_name]["key_name"]+'/{z}/{x}/{y}.png?r=B04&r_range=[46,168]&g=B03&g_range=[46,168]&b=B02&b_range=[46,168]&'
-        ftu_path = base_dir+slide_name.replace('.svs','_scaled.geojson')
-        spot_path = base_dir+slide_name.replace('.svs','_Spots_scaled.geojson')
+        ftu_path = base_dir+slide_name.replace('.'+slide_extension,'_scaled.geojson')
+        spot_path = base_dir+slide_name.replace('.'+slide_extension,'_Spots_scaled.geojson')
         cell_graphics_path = 'graphic_reference.json'
         asct_b_path = 'Kidney_v1.2 - Kidney_v1.2.csv'
 
-        metadata_paths = [base_dir+s.replace('.svs','_scaled.geojson') for s in slide_names]
+
+        metadata_paths = [base_dir+s.replace('.'+slide_extension,'_scaled.geojson') for s in slide_names]
 
     elif run_type == 'web' or run_type=='AWS':
         # For test deployment
@@ -1522,9 +1560,14 @@ def app(*args):
         metadata_paths = [slide_info_path+s.replace('.svs','_scaled.geojson') for s in slide_names]
     
     # Adding slide paths to the slide_info_dict
+    """
     for slide,path in zip(slide_names,available_slides):
         slide_info_dict[slide]['slide_path'] = path
-
+    """
+    """
+    for slide in slide_names:
+        slide_info_dict[slide]['slide_path'] = 'dummy_file_path'
+    """
     # Reading dictionary containing paths for specific cell types
     cell_graphics_key = cell_graphics_path
     cell_graphics_json = json.load(open(cell_graphics_key))
@@ -1548,13 +1591,6 @@ def app(*args):
     asct_b_table = pd.read_csv(asct_b_path,skiprows=list(range(10)))
 
     wsi = WholeSlide(slide_url,slide_name,slide_info_dict[slide_name],ftu_path,spot_path)
-
-    # printing stuff
-    """
-    print(f'Current WSI name: {slide_name}')
-    print(f'Current FTU path: {ftu_path}')
-    print(f'Current slide url: {slide_url}')
-    """
 
     external_stylesheets = [dbc.themes.LUX]
 
@@ -1599,7 +1635,6 @@ def app(*args):
     layout_handler = LayoutHandler()
     layout_handler.gen_vis_layout(cell_names,slide_names,center_point,map_dict,spot_dict)
     layout_handler.gen_builder_layout(dataset_handler)
-
 
     main_app = DashProxy(__name__,external_stylesheets=external_stylesheets,transforms = [MultiplexerTransform()])
     vis_app = SlideHeatVis(main_app,layout_handler,dataset_handler,wsi,cell_graphics_key,asct_b_table,metadata,slide_info_dict,run_type)

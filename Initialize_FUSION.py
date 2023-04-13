@@ -53,21 +53,6 @@ class LayoutHandler:
 
         # Main visualization layout, used in initialization and when switching to the viewer
 
-        # Sidebar
-        """
-        sider = html.Div([
-            dbc.Offcanvas([
-                html.Img(id='vis-logo-side',src=('./assets/Lab_Logo.png'),height='280px',width='250px'),
-                dbc.Nav([
-                    dbc.NavLink('Welcome',href='/welcome',active='exact'),
-                    dbc.NavLink('FUSION Visualizer',href='/vis',active='exact'),
-                    dbc.NavLink('Dataset Builder',href='/dataset-builder',active='exact'),
-                    dbc.NavLink('Dataset Uploader',href='/dataset-uploader',active='exact')
-                ],vertical=True,pills=True)], id='vis-sidebar-offcanvas',style={'background-color':"#f8f9fa"}
-            )
-        ])
-        """
-
         # Description and instructions card
         vis_description = [
             html.P('FUSION was designed by the members of the CMI Lab at the University of Florida in collaboration with HuBMAP'),
@@ -78,37 +63,9 @@ class LayoutHandler:
             html.Hr(),
             html.P('Happy fusing!')         
         ]
-        """
-        description = dbc.Card(
-            children = [
-                #dbc.CardHeader("Description and Instructions"),
-                dbc.CardBody([
-                    dbc.Button('Open Sidebar',id='vis-sidebar-button',className='mb-3',color='primary',n_clicks=0,style={'marginRight':'5px'}),
-                    dbc.Button("View/Hide Description",id='vis-collapse-descrip',className='mb-3',color='primary',n_clicks=0,style={'marginLeft':'5px'}),
-                    dbc.Collapse(
-                        dbc.Row(
-                            dbc.Col(
-                                html.Div(
-                                    id = 'vis-descrip',
-                                    children = [
-                                        html.P('FUSION was designed by the members of the CMI Lab at the University of Florida in collaboration with HuBMAP'),
-                                        html.Hr(),
-                                        html.P('We hope that this tool provides users with an immersive visualization method for understanding the roles of specific cell types in combination with different functional tissue units'),
-                                        html.Hr(),
-                                        html.P('As this tool is still under active development, we welcome any and all feedback. Use the "User Survey" link above to provide comments. Thanks!'),
-                                        html.Hr(),
-                                        html.P('Happy fusing!')
-                                    ],style={'fontSize':10}
-                                )
-                            )
-                        ),id='vis-collapse-content',is_open=False
-                    )
-                ])
-            ],style={'marginBottom':'20px'}
-        )
-        """
 
         # Slide selection
+        """
         slide_select = dbc.Card(
             id = 'slide-select-card',
             children = [
@@ -128,7 +85,7 @@ class LayoutHandler:
                                 dcc.Dropdown(
                                     slides_available,
                                     slides_available[0],
-                                    id = {'type':'slide-select','index':0}
+                                    id = 'slide-select'
                                 )
                             ), md=8
                         )
@@ -136,7 +93,8 @@ class LayoutHandler:
                 ])
             ],style={'marginBottom':'20px'}
         )
-        
+        """
+
         # View of WSI
         wsi_view = dbc.Card([
             dbc.CardHeader('Whole Slide Image Viewer'),
@@ -442,11 +400,6 @@ class LayoutHandler:
         # Separately outputting the functional components of the application for later reference when switching pages
         vis_content = [
             dbc.Row(
-                id = 'slide-select-row',
-                children = [slide_select]
-            ),
-            html.B(),
-            dbc.Row(
                 id="app-content",
                 children=[
                     dbc.Col(wsi_view,md=6),
@@ -466,47 +419,11 @@ class LayoutHandler:
         # allowing users to select which datasets/slides are incorporated into their 
         # current viewing instance.
 
-        # Sidebar
-        """
-        sider = html.Div([
-            dbc.Offcanvas([
-                html.Img(id='dataset-builder-logo-side',src=('./assets/Lab_Logo.png'),height='280px',width='250px'),
-                dbc.Nav([
-                    dbc.NavLink('Welcome',href='/welcome',active='exact'),
-                    dbc.NavLink('FUSION Visualizer',href='/vis',active='exact'),
-                    dbc.NavLink('Dataset Builder',href='/dataset-builder',active='exact'),
-                    dbc.NavLink('Dataset Uploader',href='/dataset-uploader',active='exact')
-                ],vertical=True,pills=True)], id='dataset-builder-sidebar-offcanvas',style={'background-color':"#f8f9fa"}
-            )
-        ])
-        """
         # Description and instructions card
         builder_description = [
             html.P('Happy fusing!')
         ]
-        """
-        description = dbc.Card(
-            children = [
-                #dbc.CardHeader("Description and Instructions"),
-                dbc.CardBody([
-                    dbc.Button('Open Sidebar',id='dataset-builder-sidebar-button',className='mb-3',color='primary',n_clicks=0,style={'marginRight':'5px'}),
-                    dbc.Button("View/Hide Description",id='dataset-builder-collapse-descrip',className='mb-3',color='primary',n_clicks=0,style={'marginLeft':'5px'}),
-                    dbc.Collapse(
-                        dbc.Row(
-                            dbc.Col(
-                                html.Div(
-                                    id = 'build-descrip',
-                                    children = [
-                                        html.P('Happy fusing!')
-                                    ],style={'fontSize':10}
-                                )
-                            )
-                        ),id='dataset-builder-collapse-content',is_open=False
-                    )
-                ])
-            ],style={'marginBottom':'20px'}
-        )
-        """
+
         # Table containing information on each datset in dataset_handler.dataset_reference
         include_columns = ["name","organ","histology_type","stain","omics_type","description"]
         combined_dataset_dict = []
@@ -565,7 +482,6 @@ class LayoutHandler:
 
         
         builder_layout = [
-                    dcc.Dropdown(['blah'],id={'type':'slide-select','index':1},style={'display':'none'}),
                     html.H3('Select a Dataset to add slides to current session'),
                     html.Hr(),
                     table_layout,
@@ -588,50 +504,13 @@ class LayoutHandler:
         # allowing users to upload their own data to be incorporated into the 
         # dataset builder or directly to the current viewing instance.
 
-
-        # Sidebar
-        """
-        sider = html.Div([
-            dbc.Offcanvas([
-                html.Img(id='dataset-uploader-logo-side',src=('./assets/Lab_Logo.png'),height='280px',width='250px'),
-                dbc.Nav([
-                    dbc.NavLink('Welcome',href='/welcome',active='exact'),
-                    dbc.NavLink('FUSION Visualizer',href='/vis',active='exact'),
-                    dbc.NavLink('Dataset Builder',href='/dataset-builder',active='exact'),
-                    dbc.NavLink('Dataset Uploader',href='/dataset-uploader',active='exact')
-                ],vertical=True,pills=True)], id='dataset-uploader-sidebar-offcanvas',style={'background-color':"#f8f9fa"}
-            )
-        ])
-        """
         # Description and instructions card
         uploader_description = [
             html.P('Happy fusing!')
         ]
-        """
-        description = dbc.Card(
-            children = [
-                #dbc.CardHeader("Description and Instructions"),
-                dbc.CardBody([
-                    dbc.Button('Open Sidebar',id={'type':'sidebar-button','index':4},className='mb-3',color='primary',n_clicks=0,style={'marginRight':'5px'}),
-                    dbc.Button("View/Hide Description",id={'type':'collapse-descrip','index':4},className='mb-3',color='primary',n_clicks=0,style={'marginLeft':'5px'}),
-                    dbc.Collapse(
-                        dbc.Row(
-                            dbc.Col(
-                                html.Div(
-                                    id = 'descrip',
-                                    children = uploader_description,
-                                    style={'fontSize':10}
-                                )
-                            )
-                        ),id={'type':'collapse-content','index':4},is_open=False
-                    )
-                ])
-            ],style={'marginBottom':'20px'}
-        )
-        """
+
         uploader_layout =[
-                html.H1('Dataset Uploader'),
-                dcc.Dropdown(['blah'],id={'type':'slide-select','index':4},style={'display':'none'}),
+                html.H1('Dataset Uploader')
             ]
         self.current_uploader_layout = uploader_layout
         self.validation_layout.append(uploader_layout)
@@ -642,51 +521,13 @@ class LayoutHandler:
 
         # welcome layout after initialization and information and buttons to go to other areas
 
-        # Sidebar
-        """
-        sider = html.Div([
-            dbc.Offcanvas([
-                html.Img(id='welcome-logo-side',src=('./assets/Lab_Logo.png'),height='280px',width='250px'),
-                dbc.Nav([
-                    dbc.NavLink('Welcome',href='/welcome',active='exact'),
-                    dbc.NavLink('FUSION Visualizer',href='/vis',active='exact'),
-                    dbc.NavLink('Dataset Builder',href='/dataset-builder',active='exact'),
-                    dbc.NavLink('Dataset Uploader',href='/dataset-uploader',active='exact')
-                ],vertical=True,pills=True)], id={'type':'sidebar-offcanvas','index':0},style={'background-color':"#f8f9fa"}
-            )
-        ])
-        """
-
         # Description and instructions card
         welcome_description = [
             html.P('Happy fusing!')
         ]
         
-        """
-        description = dbc.Card(
-            children = [
-                #dbc.CardHeader("Description and Instructions"),
-                dbc.CardBody([
-                    dbc.Button('Open Sidebar',id='welcome-sidebar-button',className='mb-3',color='primary',n_clicks=0,style={'marginRight':'5px'}),
-                    dbc.Button("View/Hide Description",id='welcome-collapse-descrip',className='mb-3',color='primary',n_clicks=0,style={'marginLeft':'5px'}),
-                    dbc.Collapse(
-                        dbc.Row(
-                            dbc.Col(
-                                html.Div(
-                                    id = 'descrip',
-                                    children = welcome_description,
-                                    style={'fontSize':10}
-                                )
-                            )
-                        ),id='welcome-collapse-content',is_open=False
-                    )
-                ])
-            ],style={'marginBottom':'20px'}
-        )
-        """
         welcome_layout = [
-                html.H1('Welcome to FUSION!'),
-                dcc.Dropdown(['blah'],id={'type':'slide-select','index':3},style={'display':'none'}),
+                html.H1('Welcome to FUSION!')
             ]
         
         self.current_welcome_layout = welcome_layout
@@ -798,6 +639,35 @@ class LayoutHandler:
             ],style={'marginBottom':'20px'}
         )
 
+        # Slide select row (seeing if keeping it in every layout will let it be updated by actions in other pages)
+        # Slide selection
+        slide_select = dbc.Card(
+            id = 'slide-select-card',
+            children = [
+                dbc.CardHeader("Select case from dropdown menu"),
+                dbc.CardBody([
+                    dbc.Row([
+                        dbc.Col(
+                            html.Div(
+                                id = "slide_select-label",
+                                children = [
+                                    html.P("Available cases: ")
+                                ]
+                            ),md=4
+                        ),
+                        dbc.Col(
+                            html.Div(
+                                dcc.Dropdown(
+                                    ['placeholder'],
+                                    id = 'slide-select'
+                                )
+                            ), md=8
+                        )
+                    ])
+                ])
+            ],style={'marginBottom':'20px','display':'none'}
+        )
+        
         welcome_layout = html.Div([
             dcc.Location(id='url'),
             header,
@@ -808,9 +678,12 @@ class LayoutHandler:
                 id = 'descrip-and-instruct',
                 children = description
             ),
+            dbc.Row(
+                id = 'slide-select-row',
+                children = slide_select
+            ),
             dbc.Container([
                 html.H1('Welcome to FUSION!'),
-                dcc.Dropdown(['blah'],id={'type':'slide-select','index':2},style={'display':'none'}),
                 ],fluid=True,id='container-content')
         ])
 
