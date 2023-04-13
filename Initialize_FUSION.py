@@ -49,7 +49,7 @@ class LayoutHandler:
         self.gen_welcome_layout()
         self.gen_uploader_layout()
 
-    def gen_vis_layout(self,cell_types,slides_available, center_point, map_dict, spot_dict):
+    def gen_vis_layout(self,cell_types, center_point, map_dict, spot_dict):
 
         # Main visualization layout, used in initialization and when switching to the viewer
 
@@ -535,7 +535,7 @@ class LayoutHandler:
         self.layout_dict['welcome'] = welcome_layout
         self.description_dict['welcome'] = welcome_description
 
-    def gen_initial_layout(self):
+    def gen_initial_layout(self,slide_names):
 
         # welcome layout after initialization and information and buttons to go to other areas
 
@@ -658,7 +658,8 @@ class LayoutHandler:
                         dbc.Col(
                             html.Div(
                                 dcc.Dropdown(
-                                    ['placeholder'],
+                                    slide_names,
+                                    slide_names[0],
                                     id = 'slide-select'
                                 )
                             ), md=8

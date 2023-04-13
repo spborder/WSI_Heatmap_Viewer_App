@@ -30,6 +30,9 @@ class WholeSlide:
         self.slide_info_dict = slide_info_dict
         self.slide_bounds = self.slide_info_dict['bounds']
         self.slide_name = slide_name
+
+        self.slide_ext = self.slide_name.split('.')[-1]
+
         if 'slide_path' in self.slide_info_dict:
             self.slide_path = self.slide_info_dict['slide_path']
 

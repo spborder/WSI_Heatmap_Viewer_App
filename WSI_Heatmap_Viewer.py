@@ -463,9 +463,6 @@ class SlideHeatVis:
             drop_div = html.Div()
             plot_div = html.Div()
 
-        print(ctx.triggered_id)
-        print(callback_context.outputs_list)
-
         callback_outputs = callback_context.outputs_list
 
         if ctx.triggered_id == 'dataset-table':
@@ -572,10 +569,6 @@ class SlideHeatVis:
     def update_current_slides(self,slide_rows):
 
         # Updating the current slides
-        print(f'triggered_id:{ctx.triggered_id}')
-        print(f'outputs list: {callback_context.outputs_list}')
-        print(f'self.current_slides:{self.current_slides}')
-        print(f'slide_rows: {slide_rows}')
         slide_rows = slide_rows[0]
         for s in range(0,len(self.current_slides)):
             if s in slide_rows:
@@ -964,9 +957,10 @@ class SlideHeatVis:
         return cell_graphic, cell_hierarchy
 
     def get_hover(self,glom_hover,spot_hover,tub_hover,art_hover):
+        
+        hover_text = ''
 
-        if not self.current_cell in self.cell_names_key:
-            hover_text = ''
+        if self.current_cell in self.cell_names_key:
             if 'glom-bounds.hover_feature' in ctx.triggered_prop_ids:
                 if not glom_hover is None:
                     hover_text = f'Glomerulus, {self.current_cell}: {round(glom_hover["properties"]["Main_Cell_Types"][self.current_cell],3)}'
@@ -983,7 +977,7 @@ class SlideHeatVis:
                 if not art_hover is None:
                     hover_text = f'Arteriole, {self.current_cell}: {round(art_hover["properties"]["Main_Cell_Types"][self.current_cell],3)}'
 
-            return hover_text
+        return hover_text
     
     def get_click(self,glom_click,spot_click,tub_click,art_click,mini_specs):
 
@@ -1192,8 +1186,10 @@ class SlideHeatVis:
         old_ftu_path = self.wsi.ftu_path
         old_spot_path = self.wsi.spot_path
 
-        new_ftu_path = old_ftu_path.replace(self.wsi.slide_name.replace('.svs',''),slide_name.replace('.svs',''))
-        new_spot_path = old_spot_path.replace(self.wsi.slide_name.replace('.svs',''),slide_name.replace('.svs',''))
+        new_ext = slide_name.split('.')[-1]
+
+        new_ftu_path = old_ftu_path.replace(self.wsi.slide_name.replace('.'+self.wsi.slide_ext,''),slide_name.replace('.'+new_ext,''))
+        new_spot_path = old_spot_path.replace(self.wsi.slide_name.replace('.'+self.wsi.slide_ext,''),slide_name.replace('.'+new_ext,''))
         new_slide = WholeSlide(new_url,slide_name,self.slide_info_dict[slide_name],new_ftu_path,new_spot_path)
 
         self.wsi = new_slide
@@ -1633,7 +1629,8 @@ def app(*args):
         }
 
     layout_handler = LayoutHandler()
-    layout_handler.gen_vis_layout(cell_names,slide_names,center_point,map_dict,spot_dict)
+    layout_handler.gen_initial_layout(slide_names)
+    layout_handler.gen_vis_layout(cell_names,center_point,map_dict,spot_dict)
     layout_handler.gen_builder_layout(dataset_handler)
 
     main_app = DashProxy(__name__,external_stylesheets=external_stylesheets,transforms = [MultiplexerTransform()])
