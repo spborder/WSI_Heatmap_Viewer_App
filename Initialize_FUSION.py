@@ -45,7 +45,6 @@ class LayoutHandler:
         self.layout_dict = {}
         self.description_dict = {}
 
-        self.gen_initial_layout()
         self.gen_welcome_layout()
         self.gen_uploader_layout()
 
@@ -129,6 +128,7 @@ class LayoutHandler:
         ], style = {'marginBottom':'20px'})
 
         # Cell type proportions and cell state distributions
+        """
         roi_pie = dbc.Card([
             dbc.CardBody([
                 dbc.Row([
@@ -147,6 +147,12 @@ class LayoutHandler:
                         )
                     ],md=6)
                 ])
+            ])
+        ])
+        """
+        roi_pie = dbc.Card([
+            dbc.CardBody([
+                html.Div(id = 'roi-pie-holder')
             ])
         ])
 
@@ -608,7 +614,7 @@ class LayoutHandler:
                     dbc.NavLink('Welcome',href='/welcome',active='exact'),
                     dbc.NavLink('FUSION Visualizer',href='/vis',active='exact'),
                     dbc.NavLink('Dataset Builder',href='/dataset-builder',active='exact'),
-                    dbc.NavLink('Dataset Uploader',href='/dataset-uploader',active='exact')
+                    dbc.NavLink('Dataset Uploader',href='/dataset-uploader',active='exact',disabled=True)
                 ],vertical=True,pills=True)], id={'type':'sidebar-offcanvas','index':0},style={'background-color':"#f8f9fa"}
             )
         ])

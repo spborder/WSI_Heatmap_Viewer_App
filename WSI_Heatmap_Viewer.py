@@ -201,10 +201,11 @@ class SlideHeatVis:
         self.app.callback(
             [Output('layer-control','children'),Output('colorbar-div','children')],
             [Input('cell-drop','value'),Input('vis-slider','value')],
+            prevent_initial_call=True
         )(self.update_cell)
 
         self.app.callback(
-            [Output('roi-pie','figure'),Output('state-bar','figure')],
+            Output('roi-pie-holder','children'),
             [Input('slide-map','zoom'),Input('slide-map','viewport')],
             State('slide-map','bounds'),
         )(self.update_roi_pie)      
@@ -215,8 +216,9 @@ class SlideHeatVis:
         )(self.update_cell_hierarchy)
 
         self.app.callback(
-            [Output('state-bar','figure'),Output('roi-pie','figure')],
-            Input('roi-pie','clickData'),
+            Output({'type':'ftu-state-bar','index':MATCH},'figure'),
+            Input({'type':'ftu-cell-pie','index':MATCH},'clickData'),
+            prevent_initial_call = True
         )(self.update_state_bar)
 
         self.app.callback(
@@ -239,8 +241,7 @@ class SlideHeatVis:
         )(self.get_click)
 
         self.app.callback(
-            [Output('slide-tile','url'), Output('layer-control','children'), Output('slide-map','center'),
-            Output('roi-pie','figure'),Output('state-bar','figure')],
+            [Output('slide-tile','url'), Output('layer-control','children'), Output('slide-map','center')],
             Input('slide-select','value'),
             prevent_initial_call=True
         )(self.ingest_wsi)
@@ -378,6 +379,8 @@ class SlideHeatVis:
             slides_list = self.dataset_handler.get_dataset(d_name)['slide_info']
 
             for s in slides_list:
+
+                self.slide_info_dict[s['name']] = s
                 
                 ftu_props = []
                 if 'geojson' in s['metadata_path']:
@@ -395,6 +398,7 @@ class SlideHeatVis:
 
             all_metadata_labels.extend(metadata_available)
 
+        self.metadata = all_metadata
         all_metadata_labels = np.unique(all_metadata_labels)
         slide_dataset_df = pd.DataFrame.from_records(slide_dataset_dict)
         self.current_slides = []
@@ -575,6 +579,7 @@ class SlideHeatVis:
                 self.current_slides[s]['included'] = True
             else:
                 self.current_slides[s]['included'] = False
+                
         slide_options = [{'label':i['Slide Names'],'value':i['Slide Names']} for i in self.current_slides if i['included']]
 
         if slide_options == []:
@@ -606,185 +611,72 @@ class SlideHeatVis:
         included_ftus = list(intersecting_ftus.keys())
         included_ftus = [i for i in included_ftus if len(intersecting_ftus[i]['polys'])>0]
 
-        if not len(self.pie_chart_order)==0:
-            self.pie_chart_order = [i for i in self.pie_chart_order if i in included_ftus]
-        else:
-            self.pie_chart_order = included_ftus
+        if len(included_ftus)>0:
 
-        if len(included_ftus)>1:
-            # Making subplots for each 
-            spec_list = [[{'type':'domain','rowspan':len(included_ftus)-1}]]
-            if len(included_ftus)>1:
-                spec_list[0].extend([{'type':'domain'}])
-            if len(included_ftus)>2:
-                for inc_f in range(0,len(included_ftus)-2):
-                    spec_list.append([None,{'type':'domain'}])
-            
-            if len(included_ftus)>1:
-                combined_pie = make_subplots(
-                    rows = len(included_ftus)-1, cols = 2,
-                    subplot_titles = included_ftus,
-                    specs = spec_list
-                )
-            else:
-                combined_pie = go.Figure()
-
-            # Iterating through intersecting_ftus and getting combined main cell proportions
-            figs_to_include = []
-            for f in included_ftus:
-                
+            tab_list = []
+            for f_idx,f in enumerate(included_ftus):
                 counts_data = pd.DataFrame(intersecting_ftus[f]['main_counts']).sum(axis=0).to_frame()
                 counts_data.columns = [f]
 
                 # Normalizing to sum to 1
                 counts_data[f] = counts_data[f]/counts_data[f].sum()
-                # Only getting the top-5
+                # Only getting top n
                 counts_data = counts_data.sort_values(by=f,ascending=False).iloc[0:self.plot_cell_types_n,:]
                 counts_data = counts_data.reset_index()
+
                 f_pie = px.pie(counts_data,values=f,names='index')
-                figs_to_include.append(f_pie)
 
-            if 'data' in figs_to_include[0]:
-                for trace in range(len(figs_to_include[0]['data'])):
-                    combined_pie.append_trace(figs_to_include[0]['data'][trace],row=1,col=1)
-            else:
-                combined_pie.append_trace(figs_to_include[0],row=1,col=1)
-            
-            for i,figure in enumerate(figs_to_include[1:]):
-                if 'data' in figure:
-                    for trace in range(len(figure['data'])):
-                        combined_pie.append_trace(figure['data'][trace],row=i+1,col=2)
-                else:
-                    combined_pie.append_trace(figure,row=i+1,col=2)
+                top_cell = counts_data['index'].tolist()[0]
+                pct_states = pd.DataFrame([i[top_cell] for i in intersecting_ftus[f]['states']]).sum(axis=0).to_frame()
+                pct_states = pct_states.reset_index()
+                pct_states.columns = ['Cell State','Proportion']
+                pct_states['Proportion'] = pct_states['Proportion']/pct_states['Proportion'].sum()
 
-            self.current_pie_chart = combined_pie
+                state_bar = px.bar(pct_states,x='Cell State',y = 'Proportion', title = f'Cell State Proportions for:<br><sup>{self.cell_graphics_key[top_cell]["full"]} in:</sup><br><sup>{f}</sup>')
 
-        elif len(included_ftus)==1:
-            
-            f = included_ftus[0]
-            # If there is only one FTU Type included:
-            counts_data = pd.DataFrame(intersecting_ftus[f]['main_counts']).sum(axis=0).to_frame()
-            counts_data.columns = [f]
+                f_tab = dbc.Tab(
+                    dbc.Row([
+                        dbc.Col([
+                            dbc.Label(f'{f} Cell Type Proportions'),
+                            dcc.Graph(
+                                id = {'type':'ftu-cell-pie','index':f_idx},
+                                figure = go.Figure(f_pie)
+                            )
+                        ],md=6),
+                        dbc.Col([
+                            dbc.Label(f'{f} Cell State Proportions'),
+                            dcc.Graph(
+                                id = {'type':'ftu-state-bar','index':f_idx},
+                                figure = go.Figure(state_bar)
+                            )
+                        ],md=6)
+                    ]),label = f,tab_id = f'tab_{f_idx}'
+                )
 
-            # Normalizing to sum to 1
-            counts_data[f] = counts_data[f]/counts_data[f].sum()
-            # Only getting the top-5
-            counts_data = counts_data.sort_values(by=f,ascending=False).iloc[0:self.plot_cell_types_n,:]
-            counts_data = counts_data.reset_index()
-            f_pie = px.pie(counts_data,values=f,names='index',title = f)
+                tab_list.append(f_tab)
 
-            combined_pie = f_pie
-            self.current_pie_chart = combined_pie
-
-        if len(included_ftus)>=1:
-            # Picking cell + ftu for cell state proportions plot
-            top_cell = counts_data['index'].tolist()[0]
-            pct_states = pd.DataFrame([i[top_cell] for i in intersecting_ftus[f]['states']]).sum(axis=0).to_frame()
-            pct_states = pct_states.reset_index()
-            pct_states.columns = ['Cell State','Proportion']
-            pct_states['Proportion'] = pct_states['Proportion']/pct_states['Proportion'].sum()
-
-            state_bar = go.Figure(px.bar(pct_states,x='Cell State', y = 'Proportion', title = f'Cell State Proportions for:<br><sup>{self.cell_graphics_key[top_cell]["full"]} in:</sup><br><sup>{f}</sup>'))
+            return dbc.Tabs(tab_list,active_tab = 'tab_0')
         else:
-            combined_pie = go.Figure()
-            self.current_pie_chart = combined_pie
-            state_bar = go.Figure()
 
-        return combined_pie, state_bar
-
-    def make_new_pie_subplots(self,big_ftu):
-
-        # Making the new focus-ftu the first in the list (probably another way to do this)
-        included_ftus = [i for i in self.pie_chart_order if len(self.current_ftus[i]['polys'])>0 and not i==big_ftu]
-        included_ftus = [big_ftu]+included_ftus
-        self.pie_chart_order = included_ftus
-
-        # Re-generating pie-chart subplots with new focus-ftu
-        spec_list = [[{'type':'domain','rowspan':len(included_ftus)-1}]]
-        if len(included_ftus)>1:
-            spec_list[0].extend([{'type':'domain'}])
-        if len(included_ftus)>2:
-            for inc_f in range(0,len(included_ftus)-2):
-                spec_list.append([None,{'type':'domain'}])
-        
-        if len(included_ftus)>1:
-            combined_pie = make_subplots(
-                rows = len(included_ftus)-1, cols = 2,
-                subplot_titles = included_ftus,
-                specs = spec_list
-            )
-        else:
-            combined_pie = go.Figure()
-
-        # Iterating through intersecting_ftus and getting combined main cell proportions
-        figs_to_include = []
-        for f in included_ftus:
-            
-            counts_data = pd.DataFrame(self.current_ftus[f]['main_counts']).sum(axis=0).to_frame()
-            counts_data.columns = [f]
-
-            # Normalizing to sum to 1
-            counts_data[f] = counts_data[f]/counts_data[f].sum()
-            # Only getting the top-5
-            counts_data = counts_data.sort_values(by=f,ascending=False).iloc[0:self.plot_cell_types_n,:]
-            counts_data = counts_data.reset_index()
-            f_pie = px.pie(counts_data,values=f,names='index')
-            figs_to_include.append(f_pie)
-
-        
-        if 'data' in figs_to_include[0]:
-            for trace in range(len(figs_to_include[0]['data'])):
-                combined_pie.append_trace(figs_to_include[0]['data'][trace],row=1,col=1)
-        else:
-            combined_pie.append_trace(figs_to_include[0],row=1,col=1)
-        
-        if len(included_ftus)>1:
-            for i,figure in enumerate(figs_to_include[1:]):
-                if 'data' in figure:
-                    for trace in range(len(figure['data'])):
-                        combined_pie.append_trace(figure['data'][trace],row=i+1,col=2)
-                else:
-                    combined_pie.append_trace(figure,row=i+1,col=2)
-
-        return combined_pie
+            return html.P('No FTUs in current view')
 
     def update_state_bar(self,cell_click):
         
         if not cell_click is None:
             self.pie_cell = cell_click['points'][0]['label']
 
-            included_ftus = list(self.current_ftus.keys())
-            non_zero_ftus = [i for i in included_ftus if len(self.current_ftus[i]['polys'])>0]
+            self.pie_ftu = list(self.current_ftus.keys())[ctx.triggered_id['index']]
 
-            if len(non_zero_ftus)>1:
-                if not self.pie_chart_order[cell_click['points'][0]['curveNumber']] == self.pie_ftu:
-                    # Re-generating pie-charts with the new FTU as the left big pie-chart
-                    self.pie_ftu = self.pie_chart_order[cell_click['points'][0]['curveNumber']]
-                    new_pie_chart = self.make_new_pie_subplots(self.pie_ftu)
-                    self.current_pie_chart = new_pie_chart
+            pct_states = pd.DataFrame([i[self.pie_cell] for i in self.current_ftus[self.pie_ftu]['states']]).sum(axis=0).to_frame()
+            pct_states = pct_states.reset_index()
+            pct_states.columns = ['Cell State', 'Proportion']
+            pct_states['Proportion'] = pct_states['Proportion']/pct_states['Proportion'].sum()
 
-                else:
-                    new_pie_chart = self.current_pie_chart
+            state_bar = go.Figure(px.bar(pct_states,x='Cell State', y = 'Proportion', title = f'Cell State Proportions for:<br><sup>{self.cell_graphics_key[self.pie_cell]["full"]} in:</sup><br><sup>{self.pie_ftu}</sup>'))
 
-            elif len(non_zero_ftus)==1:
-                new_pie_chart = self.current_pie_chart
-                self.pie_ftu = non_zero_ftus[0]
-
+            return state_bar
         else:
-            self.pie_cell = self.current_cell
-
-            new_pie_chart = self.make_new_pie_subplots(self.pie_ftu)
-            self.current_pie_chart = new_pie_chart
-
-        pct_states = pd.DataFrame([i[self.pie_cell] for i in self.current_ftus[self.pie_ftu]['states']]).sum(axis=0).to_frame()
-        pct_states = pct_states.reset_index()
-        pct_states.columns = ['Cell State', 'Proportion']
-        pct_states['Proportion'] = pct_states['Proportion']/pct_states['Proportion'].sum()
-
-        state_bar = go.Figure(px.bar(pct_states,x='Cell State', y = 'Proportion', title = f'Cell State Proportions for:<br><sup>{self.cell_graphics_key[self.pie_cell]["full"]} in:</sup><br><sup>{self.pie_ftu}</sup>'))
-
-
-        return state_bar, new_pie_chart
+            return go.Figure()
     
     def update_hex_color_key(self,color_type):
         
@@ -1258,11 +1150,7 @@ class SlideHeatVis:
                     name = 'Spots', checked = False, id = self.wsi.slide_info_dict['key_name']+'_Spots')
             ]
     
-        
         new_url = self.wsi.image_url
-
-        # Getting new pie chart and state bar chart
-        new_pie_chart, new_state_bar = self.update_roi_pie([],[],self.wsi.slide_bounds)
 
         center_point = [(self.wsi.slide_bounds[1]+self.wsi.slide_bounds[3])/2,(self.wsi.slide_bounds[0]+self.wsi.slide_bounds[2])/2]
 
@@ -1270,7 +1158,7 @@ class SlideHeatVis:
         self.current_overlays = new_children
 
 
-        return new_url, new_children, center_point, new_pie_chart, new_state_bar
+        return new_url, new_children, center_point
 
     def update_graph(self,ftu,plot,label):
         
@@ -1292,15 +1180,14 @@ class SlideHeatVis:
                     current_data.append(f)
 
         if plot=='TSNE':
-            plot_data_x = [i['x_tsne'] for i in current_data]
-            plot_data_y = [i['y_tsne'] for i in current_data]
+            plot_data_x = [i['x_tsne'] for i in current_data if 'x_tsne' in i]
+            plot_data_y = [i['y_tsne'] for i in current_data if 'y_tsne' in i]
 
         elif plot=='UMAP':
-            plot_data_x = [i['x_umap'] for i in current_data]
-            plot_data_y = [i['y_umap'] for i in current_data]
+            plot_data_x = [i['x_umap'] for i in current_data if 'x_umap' in i]
+            plot_data_y = [i['y_umap'] for i in current_data if 'y_umap' in i]
 
-
-        custom_data = [i['ftu_name'] for i in current_data]
+        custom_data = [i['ftu_name'] for i in current_data if 'ftu_name' in i]
         # If the label is image_id or cluster
         try:
             label_data = [i[label] for i in current_data]
@@ -1317,6 +1204,8 @@ class SlideHeatVis:
                         label_data.append(np.nan)
 
         graph_df = pd.DataFrame({'x':plot_data_x,'y':plot_data_y,'ID':custom_data,'Label':label_data})
+
+        graph_df = graph_df.dropna()
 
         cluster_graph = go.Figure(px.scatter(graph_df,x='x',y='y',custom_data=['ID'],color='Label',title=f'{plot} Plot of:<br><sup>{ftu} Morphometrics</sup><br><sup>Labeled by {label}</sup>'))
         cluster_graph.update_layout(
