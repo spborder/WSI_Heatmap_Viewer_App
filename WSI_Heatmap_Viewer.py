@@ -49,7 +49,6 @@ from FUSION_WSI import WholeSlide
 from Initialize_FUSION import DatasetHandler, LayoutHandler
 
 
-
 class SlideHeatVis:
     def __init__(self,
                 app,
@@ -67,6 +66,7 @@ class SlideHeatVis:
         self.current_page = 'welcome'
 
         self.dataset_handler = dataset_handler
+        self.current_overlays = self.layout_handler.initial_overlays
 
         # Setting some app-related things
         self.app = app
@@ -91,13 +91,6 @@ class SlideHeatVis:
              for i in list(self.slide_info_dict.keys())
         ]
         self.wsi = wsi
-
-        # More print statements:
-        """
-        print(f'Slide name in SlideHeatVis: {self.wsi.slide_name}')
-        print(f'Image URL in SlideHeatVis: {self.wsi.image_url}')
-        print(f'FTU path in SlideHeatVis: {self.wsi.ftu_path}')
-        """
 
         self.cell_graphics_key = json.load(open(cell_graphics_key))
         # Inverting the graphics key to get {'full_name':'abbreviation'}
@@ -223,19 +216,13 @@ class SlideHeatVis:
 
         self.app.callback(
             Output('current-hover','children'),
-            [Input('glom-bounds','hover_feature'),
-            Input('spot-bounds','hover_feature'),
-            Input('tub-bounds','hover_feature'),
-            Input('art-bounds','hover_feature')],
+            Input({'type':'ftu-bounds','index':ALL},'hover_feature'),
             prevent_initial_call=True
         )(self.get_hover)
 
         self.app.callback(
             Output('mini-label','children'),
-            [Input('glom-bounds','click_feature'),
-            Input('spot-bounds','click_feature'),
-            Input('tub-bounds','click_feature'),
-            Input('art-bounds','click_feature'),
+            [Input({'type':'ftu-bounds','index':ALL},'click_feature'),
             Input('mini-drop','value')],
             prevent_initial_call=True
         )(self.get_click)
@@ -303,21 +290,23 @@ class SlideHeatVis:
         return is_open
 
     def update_page(self,pathname):
-        print(pathname)
+        
+        print(f'Navigating to {pathname}')
         if pathname.replace('/','') in self.layout_handler.layout_dict:
-            
             self.current_page = pathname.replace('/','')
-            container_content = self.layout_handler.layout_dict[self.current_page]
-            description = self.layout_handler.description_dict[self.current_page]
 
-            if self.current_page == 'vis':
-                slide_style = {'marginBottom':'20px','display':'inline-block'}
-            else:
-                slide_style = {'display':'none'}
+        else:
+            self.current_page = 'welcome'
 
-            print(slide_style)
+        container_content = self.layout_handler.layout_dict[self.current_page]
+        description = self.layout_handler.description_dict[self.current_page]
 
-            return container_content, description, slide_style
+        if self.current_page == 'vis':
+            slide_style = {'marginBottom':'20px','display':'inline-block'}
+        else:
+            slide_style = {'display':'none'}
+
+        return container_content, description, slide_style
 
     def all_layout_callbacks(self):
 
@@ -848,70 +837,56 @@ class SlideHeatVis:
 
         return cell_graphic, cell_hierarchy
 
-    def get_hover(self,glom_hover,spot_hover,tub_hover,art_hover):
+    def get_hover(self,ftu_hover):
         
         hover_text = ''
 
         if self.current_cell in self.cell_names_key:
-            if 'glom-bounds.hover_feature' in ctx.triggered_prop_ids:
-                if not glom_hover is None:
-                    hover_text = f'Glomerulus, {self.current_cell}: {round(glom_hover["properties"]["Main_Cell_Types"][self.current_cell],3)}'
-            
-            if 'spot-bounds.hover_feature' in ctx.triggered_prop_ids:
-                if not spot_hover is None:
-                    hover_text = f'Spot, {self.current_cell}: {round(spot_hover["properties"]["Main_Cell_Types"][self.current_cell],3)}'
-
-            if 'tub-bounds.hover_feature' in ctx.triggered_prop_ids:
-                if not tub_hover is None:
-                    hover_text = f'Tubule, {self.current_cell}: {round(tub_hover["properties"]["Main_Cell_Types"][self.current_cell],3)}'
-
-            if 'art-bounds.hover_feature' in ctx.triggered_prop_ids:
-                if not art_hover is None:
-                    hover_text = f'Arteriole, {self.current_cell}: {round(art_hover["properties"]["Main_Cell_Types"][self.current_cell],3)}'
+            if not ftu_hover is None:
+                hover_text = f'{self.current_cell}:{round(ftu_hover["properties"]["Main_Cell_Types"][self.current_cell],3)}'
 
         return hover_text
     
-    def get_click(self,glom_click,spot_click,tub_click,art_click,mini_specs):
+    def get_click(self,ftu_click,mini_specs):
 
-        if not mini_specs == 'None':
-            if 'glom-bounds.click_feature' in ctx.triggered_prop_ids:
-                click_data = glom_click
-            elif 'spot-bounds.click_feature' in ctx.triggered_prop_ids:
-                click_data = spot_click
-            elif 'tub-bounds.click_feature' in ctx.triggered_prop_ids:
-                click_data = tub_click
-            elif 'art-bounds.click_feature' in ctx.triggered_prop_ids:
-                click_data = art_click
-            else:
-                click_data = None
+        if not mini_specs == 'None' and len(ftu_click)>0:
+            click_data = [i for i in ftu_click if i is not None]
             
-            if not click_data is None:
-                chart_coords = np.mean(np.squeeze(click_data['geometry']['coordinates']),axis=0)
-                chart_dict_data = click_data['properties']
+            if len(click_data)>0:
+                mini_chart_list = []
+                for c in click_data:
+                    chart_coords = np.mean(np.squeeze(c['geometry']['coordinates']),axis=0)
+                    chart_dict_data = c['properties']
 
-                if mini_specs == 'All Main Cell Types':
-                    chart_dict_data = chart_dict_data['Main_Cell_Types']
-                else:
-                    chart_dict_data = chart_dict_data['Cell_States'][self.current_cell]
+                    if mini_specs == 'All Main Cell Types':
+                        chart_dict_data = chart_dict_data['Main_Cell_Types']
+                    else:
+                        chart_dict_data = chart_dict_data['Cell_States'][self.current_cell]
 
-                chart_labels = list(chart_dict_data.keys())
-                chart_data = [chart_dict_data[j] for j in chart_labels]
+                    chart_labels = list(chart_dict_data.keys())
+                    chart_data = [chart_dict_data[j] for j in chart_labels]
 
-                if not all([i==j for i,j in zip(chart_coords,self.current_chart_coords)]):
-                    self.current_chart_coords = chart_coords
+                    if not all([i==j for i,j in zip(chart_coords,self.current_chart_coords)]):
+                        self.current_chart_coords = chart_coords
 
-                    mini_pie_chart = dl.Minichart(
-                        data = chart_data, 
-                        labels = chart_labels, 
-                        lat=chart_coords[1],
-                        lon=chart_coords[0],
-                        height=100,
-                        width=100,
-                        labelMinSize=2,
-                        type='pie',id=f'pie_click{random.randint(0,1000)}')
+                        mini_pie_chart = dl.Minichart(
+                            data = chart_data, 
+                            labels = chart_labels, 
+                            lat=chart_coords[1],
+                            lon=chart_coords[0],
+                            height=100,
+                            width=100,
+                            labelMinSize=2,
+                            type='pie',id=f'pie_click{random.randint(0,1000)}')
 
-                    return [mini_pie_chart]
-             
+                        mini_chart_list.append(mini_pie_chart)
+
+                return mini_chart_list
+            else:
+                return []
+        else:
+            return []
+                     
     def gen_cyto(self,cell_val):
 
         cyto_elements = []
@@ -1101,32 +1076,21 @@ class SlideHeatVis:
             spot_geojson_polys = geojson.load(f)
 
         map_dict = {
-            'url':new_slide.image_url,
+            'url':self.wsi.image_url,
             'FTUs':{
-                'Glomeruli': {
-                    'geojson':{'type':'FeatureCollection', 'features': [i for i in geojson_polys['features'] if i['properties']['structure']=='Glomeruli']},
-                    'id': 'glom-bounds',
-                    'color': '#390191',
-                    'hover_color':'#666'
-                },
-                'Tubules': {
-                    'geojson':{'type':'FeatureCollection', 'features': [i for i in geojson_polys['features'] if i['properties']['structure']=='Tubules']},
-                    'id':'tub-bounds',
-                    'color': '#e71d1d',
-                    'hover_color': '#ff0b0a'
-                },
-                'Arterioles': {
-                    'geojson':{'type':'FeatureCollection', 'features': [i for i in geojson_polys['features'] if i['properties']['structure']=='Arterioles']},
-                    'id':'art-bounds',
-                    'color': '#b6d7a8',
-                    'hover_color': '#50f207'
+                struct : {
+                    'geojson':{'type':'FeatureCollection','features':[i for i in self.wsi.geojson_ftus['features'] if i['properties']['structure']==struct]},
+                    'id':{'type':'ftu-bounds','index':list(self.wsi.ftus.keys()).index(struct)},
+                    'color':'',
+                    'hover_color':''
                 }
+                for struct in list(self.wsi.ftus.keys())
             }
         }
 
         spot_dict = {
             'geojson':spot_geojson_polys,
-            'id': 'spot-bounds',
+            'id': {'type':'ftu-bounds','index':len(list(self.wsi.ftus.keys()))},
             'color': '#dffa00',
             'hover_color':'#9caf00'
         }
@@ -1156,7 +1120,6 @@ class SlideHeatVis:
 
         # Adding the layers to be a property for the edit_control callback
         self.current_overlays = new_children
-
 
         return new_url, new_children, center_point
 
@@ -1327,43 +1290,44 @@ class SlideHeatVis:
 
     def add_manual_roi(self,new_geojson):
         
-        #print(new_geojson)
-        if not new_geojson['features'] == []:
-            # New geojson has no properties which can be used for overlays or anything so we have to add those
-            # Step 1, find intersecting spots:
-            overlap_dict = self.wsi.find_intersecting_spots(shape(new_geojson['features'][0]['geometry']))
-            main_counts_data = pd.DataFrame(overlap_dict['main_counts']).sum(axis=0).to_frame()
-            main_counts_data = (main_counts_data/main_counts_data.sum()).fillna(0.000).round(decimals=3)
+        print(f'manual_roi:{new_geojson}')
+        if not new_geojson is None:
+            if len(new_geojson['features'])>0:
+                # New geojson has no properties which can be used for overlays or anything so we have to add those
+                # Step 1, find intersecting spots:
+                overlap_dict = self.wsi.find_intersecting_spots(shape(new_geojson['features'][0]['geometry']))
+                main_counts_data = pd.DataFrame(overlap_dict['main_counts']).sum(axis=0).to_frame()
+                main_counts_data = (main_counts_data/main_counts_data.sum()).fillna(0.000).round(decimals=3)
 
-            main_counts_data[0] = main_counts_data[0].map('{:.4f}'.format)
+                main_counts_data[0] = main_counts_data[0].map('{:.4f}'.format)
+                
+                main_counts_dict = main_counts_data.astype(float).to_dict()[0]
+
+                agg_cell_states = {}
+                for m_c in list(main_counts_dict.keys()):
+                    cell_states = pd.DataFrame([i[m_c] for i in overlap_dict['states']]).sum(axis=0).to_frame()
+                    cell_states = (cell_states/cell_states.sum()).fillna(0.000).round(decimals=3)
+
+                    cell_states[0] = cell_states[0].map('{:.4f}'.format)
+
+                    agg_cell_states[m_c] = cell_states.astype(float).to_dict()[0]
+                
+
+                new_geojson['features'][0]['properties']['Main_Cell_Types'] = main_counts_dict
+                new_geojson['features'][0]['properties']['Cell_States'] = agg_cell_states
+                #print(new_geojson)
+
+                new_child = dl.Overlay(
+                    dl.LayerGroup(
+                        dl.GeoJSON(data = new_geojson, id = {'type':'ftu-bounds','index':len(self.current_overlays)}, options = dict(style=self.ftu_style_handle),
+                            hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = self.cell_vis_val),
+                            hoverStyle = arrow_function(dict(weight=5, color = '#ff737e',dashArray = ''))
+                        )
+                    ), name = f'Manual ROI {len(self.current_overlays)-(1+len(list(self.wsi.ftus.keys())))}', checked = True, id = self.wsi.slide_info_dict['key_name']+f'_manual_roi{len(self.current_overlays)-(1+len(list(self.wsi.ftus.keys())))}'
+                )
+
+                self.current_overlays.append(new_child)
             
-            main_counts_dict = main_counts_data.astype(float).to_dict()[0]
-
-            agg_cell_states = {}
-            for m_c in list(main_counts_dict.keys()):
-                cell_states = pd.DataFrame([i[m_c] for i in overlap_dict['states']]).sum(axis=0).to_frame()
-                cell_states = (cell_states/cell_states.sum()).fillna(0.000).round(decimals=3)
-
-                cell_states[0] = cell_states[0].map('{:.4f}'.format)
-
-                agg_cell_states[m_c] = cell_states.astype(float).to_dict()[0]
-            
-
-            new_geojson['features'][0]['properties']['Main_Cell_Types'] = main_counts_dict
-            new_geojson['features'][0]['properties']['Cell_States'] = agg_cell_states
-            #print(new_geojson)
-
-            new_child = dl.Overlay(
-                dl.LayerGroup(
-                    dl.GeoJSON(data = new_geojson, id = 'manual-bounds', options = dict(style=self.ftu_style_handle),
-                        hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = self.cell_vis_val),
-                        hoverStyle = arrow_function(dict(weight=5, color = '#ff737e',dashArray = ''))
-                    )
-                ), name = f'Manual ROI {len(self.current_overlays)-3}', checked = True, id = self.wsi.slide_info_dict['key_name']+f'_manual_roi{len(self.current_overlays)-3}'
-            )
-
-            self.current_overlays.append(new_child)
-
 
             return self.current_overlays
 
@@ -1379,21 +1343,10 @@ def app(*args):
     except:
         print(f'Using {run_type} run type')
 
-    """
-    print(f'Using {run_type} run type')
-    print(f'Current working directory is: {os.getcwd()}')
-    print(f'Contents of current working directory is: {os.listdir(os.getcwd())}')
-    """
 
     if run_type == 'local':
         # For local testing
         base_dir = '/mnt/c/Users/Sam/Desktop/HIVE/SpotNet_NonEssential_Files/WSI_Heatmap_Viewer_App/assets/slide_info/'
-
-        """
-        available_slides = sorted(glob(base_dir+'*.svs'))
-        slide_names = [i.split('/')[-1] for i in available_slides]
-        slide_name = slide_names[0]
-        """
 
         # Loading initial dataset
         dataset_reference_path = 'dataset_reference.json'
@@ -1416,7 +1369,6 @@ def app(*args):
         spot_path = base_dir+slide_name.replace('.'+slide_extension,'_Spots_scaled.geojson')
         cell_graphics_path = 'graphic_reference.json'
         asct_b_path = 'Kidney_v1.2 - Kidney_v1.2.csv'
-
 
         metadata_paths = [base_dir+s.replace('.'+slide_extension,'_scaled.geojson') for s in slide_names]
 
@@ -1445,14 +1397,7 @@ def app(*args):
         metadata_paths = [slide_info_path+s.replace('.svs','_scaled.geojson') for s in slide_names]
     
     # Adding slide paths to the slide_info_dict
-    """
-    for slide,path in zip(slide_names,available_slides):
-        slide_info_dict[slide]['slide_path'] = path
-    """
-    """
-    for slide in slide_names:
-        slide_info_dict[slide]['slide_path'] = 'dummy_file_path'
-    """
+
     # Reading dictionary containing paths for specific cell types
     cell_graphics_key = cell_graphics_path
     cell_graphics_json = json.load(open(cell_graphics_key))
@@ -1488,31 +1433,21 @@ def app(*args):
         map_dict = {
             'url':wsi.image_url,
             'FTUs':{
-                'Glomeruli': {
-                    'geojson':{'type':'FeatureCollection', 'features': [i for i in wsi.geojson_ftus['features'] if i['properties']['structure']=='Glomeruli']},
-                    'id': 'glom-bounds',
-                    'color': '#390191',
-                    'hover_color':'#666'
-                },
-                'Tubules': {
-                    'geojson':{'type':'FeatureCollection', 'features': [i for i in wsi.geojson_ftus['features'] if i['properties']['structure']=='Tubules']},
-                    'id':'tub-bounds',
-                    'color': '#e71d1d',
-                    'hover_color': '#ff0b0a'
-                },
-                'Arterioles': {
-                    'geojson':{'type':'FeatureCollection', 'features': [i for i in wsi.geojson_ftus['features'] if i['properties']['structure']=='Arterioles']},
-                    'id':'art-bounds',
-                    'color': '#b6d7a8',
-                    'hover_color': '#50f207'
+                struct : {
+                    'geojson':{'type':'FeatureCollection','features':[i for i in wsi.geojson_ftus['features'] if i['properties']['structure']==struct]},
+                    'id':{'type':'ftu-bounds','index':list(wsi.ftus.keys()).index(struct)},
+                    'color':'',
+                    'hover_color':''
                 }
+                for struct in list(wsi.ftus.keys())
             }
         }
+
 
     if dataset_info_dict['omics_type']=='Visium':
         spot_dict = {
             'geojson':wsi.geojson_spots,
-            'id': 'spot-bounds',
+            'id': {'type':'ftu-bounds','index':len(list(wsi.ftus.keys()))},
             'color': '#dffa00',
             'hover_color':'#9caf00'
         }
