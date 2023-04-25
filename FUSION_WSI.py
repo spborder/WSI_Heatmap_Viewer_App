@@ -22,6 +22,7 @@ class WholeSlide:
                 slide_info_dict,
                 ftu_path,
                 spot_path,
+                manual_rois = None,
                 verbose = False):
         
         self.image_url = image_url
@@ -30,6 +31,10 @@ class WholeSlide:
         self.slide_info_dict = slide_info_dict
         self.slide_bounds = self.slide_info_dict['bounds']
         self.slide_name = slide_name
+
+        self.manual_rois = manual_rois
+        if self.manual_rois is None:
+            self.manual_rois = []
 
         self.slide_ext = self.slide_name.split('.')[-1]
 

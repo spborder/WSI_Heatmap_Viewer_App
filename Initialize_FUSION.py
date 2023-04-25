@@ -34,7 +34,6 @@ from dash.dependencies import handle_callback_args
 from dash.dependencies import Input, Output, State
 
 
-
 class LayoutHandler:
     def __init__(self,
                  verbose = False):
@@ -96,35 +95,40 @@ class LayoutHandler:
 
         # View of WSI
 
-        self.initial_overlays = html.Div(
-            dl.Map(center = center_point, zoom = 12, minZoom=11, children = [
-                dl.TileLayer(url = map_dict['url'], id = 'slide-tile'),
-                dl.FeatureGroup([dl.EditControl(id='edit_control')]),
-                dl.LayerGroup(id='mini-label'),
-                html.Div(id='colorbar-div',children = [dl.Colorbar(id='map-colorbar')]),
-                dl.LayersControl(id = 'layer-control', children = 
-                    [
-                        dl.Overlay(
-                            dl.LayerGroup(
-                                dl.GeoJSON(data = map_dict['FTUs'][struct]['geojson'], id = map_dict['FTUs'][struct]['id'], options = dict(color = map_dict['FTUs'][struct]['color']),
-                                    hoverStyle = arrow_function(dict(weight=5, color = map_dict['FTUs'][struct]['hover_color'], dashArray = '')))),
-                            name = struct, checked = True, id = struct)
-                    for struct in map_dict['FTUs']
-                    ] + 
-                    [
-                        dl.Overlay(
-                            dl.LayerGroup(
-                                dl.GeoJSON(data = spot_dict['geojson'], id = spot_dict['id'], options = dict(color = spot_dict['color']),
-                                    hoverStyle = arrow_function(dict(weight=5, color = spot_dict['hover_color'], dashArray = '')))),
-                            name = 'Spots', checked = False, id = 'Spots')
-                    ]
-                )
-            ], style={'width': '100%', 'height': '80vh', 'margin': "auto", "display": "inline-block"}, id = 'slide-map')
-        )
+        self.initial_overlays = [
+            dl.Overlay(
+                dl.LayerGroup(
+                    dl.GeoJSON(data = map_dict['FTUs'][struct]['geojson'], id = map_dict['FTUs'][struct]['id'], options = dict(color = map_dict['FTUs'][struct]['color']),
+                        hoverStyle = arrow_function(dict(weight=5, color = map_dict['FTUs'][struct]['hover_color'], dashArray = '')))),
+                name = struct, checked = True, id = struct)
+        for struct in map_dict['FTUs']
+        ] 
+
+        self.initial_overlays+= [
+            dl.Overlay(
+                dl.LayerGroup(
+                    dl.GeoJSON(data = spot_dict['geojson'], id = spot_dict['id'], options = dict(color = spot_dict['color']),
+                        hoverStyle = arrow_function(dict(weight=5, color = spot_dict['hover_color'], dashArray = '')))),
+                name = 'Spots', checked = False, id = 'Spots')
+        ]
 
         wsi_view = dbc.Card([
             dbc.CardHeader('Whole Slide Image Viewer'),
-            dbc.Row([self.initial_overlays]),
+            dbc.Row([
+                html.Div(
+                    dl.Map(center=center_point, zoom = 12, minZoom=11,
+                           children = [
+                                dl.TileLayer(url = map_dict['url'],id = 'slide-tile'),
+                                dl.FeatureGroup([dl.EditControl(id='edit_control')]),
+                                dl.LayerGroup(id='mini-label'),
+                                html.Div(id='colorbar-div',children=[dl.Colorbar(id='map-colorbar')]),
+                                dl.LayersControl(id='layer-control',children = self.initial_overlays)
+                           ],
+                           style = {'width':'100%','height':'80vh','margin':'auto','display':'inline-block'},
+                           id = 'slide-map'
+                    )
+                )
+            ]),
             dbc.Row([html.Div(id='current-hover')])
         ], style = {'marginBottom':'20px'})
 

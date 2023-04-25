@@ -689,6 +689,10 @@ class SlideHeatVis:
                 spot_counts = pd.DataFrame(g['main_counts'])[self.current_cell].tolist()
                 raw_values_list.extend(spot_counts)
 
+            for f in self.wsi.manual_rois:
+                manual_counts = pd.DataFrame(f['features'][0]['properties'])[self.current_cell].tolist()
+                raw_values_list.extend(manual_counts)
+
         elif color_type == 'max_cell':
             # iterating through current ftus
             for f in self.wsi.ftus:
@@ -774,30 +778,19 @@ class SlideHeatVis:
             map_dict = {
                 'url':self.wsi.image_url,
                 'FTUs':{
-                    'Glomeruli': {
-                        'geojson':{'type':'FeatureCollection', 'features': [i for i in self.wsi.geojson_ftus['features'] if i['properties']['structure']=='Glomeruli']},
-                        'id': 'glom-bounds',
-                        'color': '#390191',
-                        'hover_color':'#666'
-                    },
-                    'Tubules': {
-                        'geojson':{'type':'FeatureCollection', 'features': [i for i in self.wsi.geojson_ftus['features'] if i['properties']['structure']=='Tubules']},
-                        'id':'tub-bounds',
-                        'color': '#e71d1d',
-                        'hover_color': '#ff0b0a'
-                    },
-                    'Arterioles': {
-                        'geojson':{'type':'FeatureCollection', 'features': [i for i in self.wsi.geojson_ftus['features'] if i['properties']['structure']=='Arterioles']},
-                        'id':'art-bounds',
-                        'color': '#b6d7a8',
-                        'hover_color': '#50f207'
+                    struct : {
+                        'geojson':{'type':'FeatureCollection','features':[i for i in self.wsi.geojson_ftus['features'] if i['properties']['structure']==struct]},
+                        'id':{'type':'ftu-bounds','index':list(self.wsi.ftus.keys()).index(struct)},
+                        'color':'',
+                        'hover_color':''
                     }
+                    for struct in list(self.wsi.ftus.keys())
                 }
             }
 
             spot_dict = {
                 'geojson':self.wsi.geojson_spots,
-                'id': 'spot-bounds',
+                'id': {'type':'ftu-bounds','index':len(list(self.wsi.ftus.keys()))},
                 'color': '#dffa00',
                 'hover_color':'#9caf00'
             }
@@ -820,6 +813,19 @@ class SlideHeatVis:
                                 hoverStyle = arrow_function(dict(weight=5, color = spot_dict['hover_color'], dashArray = '')))),
                         name = 'Spots', checked = False, id = self.wsi.slide_info_dict['key_name']+'_Spots')
                 ]
+            
+            for m_idx,man in enumerate(self.wsi.manual_rois):
+                new_children.append(
+                    dl.Overlay(
+                        dl.LayerGroup(
+                            dl.GeoJSON(data = man['geojson'], id = man['id'], options = dict(style = self.ftu_style_handle),
+                                       hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = vis_val, ftu_colors = self.ftu_colors),
+                                       hoverStyle = arrow_function(dict(weight=5, color = man['hover_color'], dashArray = '')))),
+                            name = f'Manual ROI {m_idx}', checked = True, id = self.wsi.slide_info_dict['key_name']+f'_manual_roi{m_idx}'
+                        )
+                    )
+                
+            self.current_overlays = new_children
                         
             return new_children, color_bar
 
@@ -839,11 +845,15 @@ class SlideHeatVis:
 
     def get_hover(self,ftu_hover):
         
-        hover_text = ''
+        hover_text = []
 
-        if self.current_cell in self.cell_names_key:
-            if not ftu_hover is None:
-                hover_text = f'{self.current_cell}:{round(ftu_hover["properties"]["Main_Cell_Types"][self.current_cell],3)}'
+        if self.current_cell in self.cell_graphics_key:
+            for f in ftu_hover:
+                if f is not None:
+                    print(f)
+                    hover_text.append(f'{self.current_cell}:{round(f["properties"]["Main_Cell_Types"][self.current_cell],3)}')
+        else:
+            print(f'current_cell: {self.current_cell} not in cell_names_key')        
 
         return hover_text
     
@@ -1068,13 +1078,6 @@ class SlideHeatVis:
         elif self.current_cell == 'cluster':
             self.update_hex_color_key('cluster')
 
-        # Getting map_dict and spot_dict for overlays
-        with open(new_ftu_path) as f:
-            geojson_polys = geojson.load(f)
-
-        with open(new_spot_path) as f:
-            spot_geojson_polys = geojson.load(f)
-
         map_dict = {
             'url':self.wsi.image_url,
             'FTUs':{
@@ -1089,7 +1092,7 @@ class SlideHeatVis:
         }
 
         spot_dict = {
-            'geojson':spot_geojson_polys,
+            'geojson':self.wsi.geojson_spots,
             'id': {'type':'ftu-bounds','index':len(list(self.wsi.ftus.keys()))},
             'color': '#dffa00',
             'hover_color':'#9caf00'
@@ -1290,47 +1293,67 @@ class SlideHeatVis:
 
     def add_manual_roi(self,new_geojson):
         
-        print(f'manual_roi:{new_geojson}')
-        if not new_geojson is None:
-            if len(new_geojson['features'])>0:
-                # New geojson has no properties which can be used for overlays or anything so we have to add those
-                # Step 1, find intersecting spots:
-                overlap_dict = self.wsi.find_intersecting_spots(shape(new_geojson['features'][0]['geometry']))
-                main_counts_data = pd.DataFrame(overlap_dict['main_counts']).sum(axis=0).to_frame()
-                main_counts_data = (main_counts_data/main_counts_data.sum()).fillna(0.000).round(decimals=3)
+        print(f'triggered_id for add_manual: {ctx.triggered_id}')
+        print(f'triggered prop ids for add_manual: {ctx.triggered_prop_ids}')
+        if ctx.triggered_id == 'edit_control':
+            print(f'manual_roi:{new_geojson}')
+            if not new_geojson is None:
+                if len(new_geojson['features'])>0:
+                    # New geojson has no properties which can be used for overlays or anything so we have to add those
+                    # Step 1, find intersecting spots:
+                    overlap_dict = self.wsi.find_intersecting_spots(shape(new_geojson['features'][0]['geometry']))
+                    print(overlap_dict)
+                    main_counts_data = pd.DataFrame(overlap_dict['main_counts']).sum(axis=0).to_frame()
+                    main_counts_data = (main_counts_data/main_counts_data.sum()).fillna(0.000).round(decimals=18)
 
-                main_counts_data[0] = main_counts_data[0].map('{:.4f}'.format)
-                
-                main_counts_dict = main_counts_data.astype(float).to_dict()[0]
+                    main_counts_data[0] = main_counts_data[0].map('{:.19f}'.format)
+                    
+                    main_counts_dict = main_counts_data.astype(float).to_dict()[0]
 
-                agg_cell_states = {}
-                for m_c in list(main_counts_dict.keys()):
-                    cell_states = pd.DataFrame([i[m_c] for i in overlap_dict['states']]).sum(axis=0).to_frame()
-                    cell_states = (cell_states/cell_states.sum()).fillna(0.000).round(decimals=3)
+                    agg_cell_states = {}
+                    for m_c in list(main_counts_dict.keys()):
+                        cell_states = pd.DataFrame([i[m_c] for i in overlap_dict['states']]).sum(axis=0).to_frame()
+                        cell_states = (cell_states/cell_states.sum()).fillna(0.000).round(decimals=18)
 
-                    cell_states[0] = cell_states[0].map('{:.4f}'.format)
+                        cell_states[0] = cell_states[0].map('{:.19f}'.format)
 
-                    agg_cell_states[m_c] = cell_states.astype(float).to_dict()[0]
-                
+                        agg_cell_states[m_c] = cell_states.astype(float).to_dict()[0]
+                    
 
-                new_geojson['features'][0]['properties']['Main_Cell_Types'] = main_counts_dict
-                new_geojson['features'][0]['properties']['Cell_States'] = agg_cell_states
-                #print(new_geojson)
+                    new_geojson['features'][0]['properties']['Main_Cell_Types'] = main_counts_dict
+                    new_geojson['features'][0]['properties']['Cell_States'] = agg_cell_states
+                    print(new_geojson)
 
-                new_child = dl.Overlay(
-                    dl.LayerGroup(
-                        dl.GeoJSON(data = new_geojson, id = {'type':'ftu-bounds','index':len(self.current_overlays)}, options = dict(style=self.ftu_style_handle),
-                            hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = self.cell_vis_val),
-                            hoverStyle = arrow_function(dict(weight=5, color = '#ff737e',dashArray = ''))
-                        )
-                    ), name = f'Manual ROI {len(self.current_overlays)-(1+len(list(self.wsi.ftus.keys())))}', checked = True, id = self.wsi.slide_info_dict['key_name']+f'_manual_roi{len(self.current_overlays)-(1+len(list(self.wsi.ftus.keys())))}'
-                )
+                    self.wsi.manual_rois.append(
+                        {
+                            'geojson':new_geojson,
+                            'id':{'type':'ftu-bounds','index':len(self.current_overlays)},
+                            'hover_color':'#32a852'
+                        }
+                    )
 
-                self.current_overlays.append(new_child)
-            
+                    # Updating the hex color key with new values
+                    self.update_hex_color_key('cell_value')
 
-            return self.current_overlays
+                    new_child = dl.Overlay(
+                        dl.LayerGroup(
+                            dl.GeoJSON(data = new_geojson, id = {'type':'ftu-bounds','index':len(self.current_overlays)}, options = dict(style=self.ftu_style_handle),
+                                hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = self.cell_vis_val),
+                                hoverStyle = arrow_function(dict(weight=5, color = '#32a852',dashArray = ''))
+                            )
+                        ), name = f'Manual ROI {len(self.wsi.manual_rois)}', checked = True, id = self.wsi.slide_info_dict['key_name']+f'_manual_roi{len(self.wsi.manual_rois)}'
+                    )
 
+                    self.current_overlays.append(new_child)
+
+                    return self.current_overlays
+                else:
+                    raise exceptions.PreventUpdate
+            else:
+                raise exceptions.PreventUpdate
+        else:
+            raise exceptions.PreventUpdate    
+        
 
 
 #if __name__ == '__main__':
