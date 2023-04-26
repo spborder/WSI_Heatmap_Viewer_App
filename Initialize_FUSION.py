@@ -119,7 +119,7 @@ class LayoutHandler:
                     dl.Map(center=center_point, zoom = 12, minZoom=11,
                            children = [
                                 dl.TileLayer(url = map_dict['url'],id = 'slide-tile'),
-                                dl.FeatureGroup([dl.EditControl(id='edit_control')]),
+                                dl.FeatureGroup(id='feature-group',children = [dl.EditControl(id='edit_control')]),
                                 dl.LayerGroup(id='mini-label'),
                                 html.Div(id='colorbar-div',children=[dl.Colorbar(id='map-colorbar')]),
                                 dl.LayersControl(id='layer-control',children = self.initial_overlays)
@@ -328,6 +328,27 @@ class LayoutHandler:
             else:
                 cell_types_list.append({'label':c+' (In Progress)','value':c,'disabled':True})
 
+        # Extracting data tab
+        data_options = [
+            {'label':'Annotations','value':'Annotations','disabled':False},
+            {'label':'Slide Metadata','value':'Slide Metadata','disabled':False},
+            {'label':'Selected FTUs and Metadata','value':'Selected FTUs and Metadata','disabled':True},
+            {'label':'Manual ROIs','value':'Manual ROIs','disabled':True}
+        ]
+        extract_card = dbc.Card([
+            dbc.CardBody([
+                dbc.Row([
+                    dbc.Label('Select data for download',html_for = 'data-select'),
+                    dcc.Dropdown(data_options,placeholder = 'Select Data for Download',multi=True,id='data-select')
+                ]),
+                dbc.Row([dbc.Label('Download options',html_for = 'data-options')]),
+                dbc.Row([
+                    html.Div(id='data-options')
+                ])
+            ])
+        ])
+        
+
         mini_options = ['All Main Cell Types','Cell States for Current Cell Type','None']
         tools = [
             dbc.Card(
@@ -377,7 +398,8 @@ class LayoutHandler:
                                     #dbc.Tab(thumbnail_select, label = "Thumbnail ROI"),
                                     dbc.Tab(roi_pie, label = "Cell Composition"),
                                     dbc.Tab(cell_card,label = "Cell Card"),
-                                    dbc.Tab(cluster_card,label = 'Morphological Clustering')
+                                    dbc.Tab(cluster_card,label = 'Morphological Clustering'),
+                                    dbc.Tab(extract_card,label = 'Download Data')
                                 ])
                             ])
                         ])
