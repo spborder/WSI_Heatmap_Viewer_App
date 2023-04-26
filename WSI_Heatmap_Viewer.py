@@ -191,90 +191,9 @@ class SlideHeatVis:
             """
         )
 
-        self.app.callback(
-            [Output('layer-control','children'),Output('colorbar-div','children')],
-            [Input('cell-drop','value'),Input('vis-slider','value')],
-            prevent_initial_call=True
-        )(self.update_cell)
-
-        self.app.callback(
-            Output('roi-pie-holder','children'),
-            [Input('slide-map','zoom'),Input('slide-map','viewport')],
-            State('slide-map','bounds'),
-        )(self.update_roi_pie)      
-
-        self.app.callback(
-            [Output('cell-graphic','src'),Output('cell-hierarchy','elements')],
-            Input('cell-cards-drop','value'),
-        )(self.update_cell_hierarchy)
-
-        self.app.callback(
-            Output({'type':'ftu-state-bar','index':MATCH},'figure'),
-            Input({'type':'ftu-cell-pie','index':MATCH},'clickData'),
-            prevent_initial_call = True
-        )(self.update_state_bar)
-
-        """
-        self.app.callback(
-            Output('current-hover','children'),
-            Input({'type':'ftu-bounds','index':ALL},'hover_feature'),
-            prevent_initial_call=True
-        )(self.get_hover)
-        """
         
-        self.app.callback(
-            Output('mini-label','children'),
-            [Input({'type':'ftu-bounds','index':ALL},'click_feature'),
-            Input('mini-drop','value')],
-            prevent_initial_call=True
-        )(self.get_click)
-
-        self.app.callback(
-            [Output('slide-tile','url'),
-             Output('layer-control','children'),
-             Output('slide-map','center'),
-             Output('feature-group','children')],
-            Input('slide-select','value'),
-            prevent_initial_call=True,
-            suppress_callback_exceptions=True
-        )(self.ingest_wsi)
-        
-        self.app.callback(
-            [Output('label-p','children'),
-            Output('id-p','children'),
-            Output('notes-p','children')],
-            Input('cell-hierarchy','tapNodeData'),
-            prevent_initial_call=True
-        )(self.get_cyto_data)
-
-        self.app.callback(
-            [Input('ftu-select','value'),
-            Input('plot-select','value'),
-            Input('label-select','value')],
-            [Output('cluster-graph','figure'),
-            Output('label-select','options')],
-        )(self.update_graph)
-
-        self.app.callback(
-            [Input('cluster-graph','clickData'),
-            Input('cluster-graph','selectedData')],
-            [Output('selected-image','figure'),
-            Output('selected-cell-types','figure'),
-            Output('selected-cell-states','figure')],
-        )(self.update_selected)
-
-        self.app.callback(
-            Input('selected-cell-types','clickData'),
-            Output('selected-cell-states','figure'),
-            prevent_initial_call=True
-        )(self.update_selected_state_bar)
-
-        self.app.callback(
-            Input('edit_control','geojson'),
-            Output('layer-control','children'),
-            prevent_initial_call=True
-        )(self.add_manual_roi)
-
+        # Adding callbacks to app
+        self.vis_callbacks()
         self.all_layout_callbacks()
         self.builder_callbacks()
 
@@ -338,6 +257,110 @@ class SlideHeatVis:
             [State({'type':'sidebar-offcanvas','index':MATCH},'is_open')],
             prevent_initial_call=True
         )(self.view_sidebar)
+
+    def vis_callbacks(self):
+
+        self.app.callback(
+            [Output('layer-control','children'),Output('colorbar-div','children')],
+            [Input('cell-drop','value'),Input('vis-slider','value')],
+            prevent_initial_call=True
+        )(self.update_cell)
+
+        self.app.callback(
+            Output('roi-pie-holder','children'),
+            [Input('slide-map','zoom'),Input('slide-map','viewport')],
+            State('slide-map','bounds'),
+        )(self.update_roi_pie)      
+
+        self.app.callback(
+            [Output('cell-graphic','src'),Output('cell-hierarchy','elements')],
+            Input('cell-cards-drop','value'),
+        )(self.update_cell_hierarchy)
+
+        self.app.callback(
+            Output({'type':'ftu-state-bar','index':MATCH},'figure'),
+            Input({'type':'ftu-cell-pie','index':MATCH},'clickData'),
+            prevent_initial_call = True
+        )(self.update_state_bar)
+
+        """
+        # Commenting out hover for now, not really useful
+        self.app.callback(
+            Output('current-hover','children'),
+            Input({'type':'ftu-bounds','index':ALL},'hover_feature'),
+            prevent_initial_call=True
+        )(self.get_hover)
+        """
+
+        self.app.callback(
+            Output('mini-label','children'),
+            [Input({'type':'ftu-bounds','index':ALL},'click_feature'),
+            Input('mini-drop','value')],
+            prevent_initial_call=True
+        )(self.get_click)
+
+        self.app.callback(
+            [Output('slide-tile','url'),
+             Output('layer-control','children'),
+             Output('slide-map','center'),
+             Output('feature-group','children')],
+            Input('slide-select','value'),
+            prevent_initial_call=True,
+            suppress_callback_exceptions=True
+        )(self.ingest_wsi)
+        
+        self.app.callback(
+            [Output('label-p','children'),
+            Output('id-p','children'),
+            Output('notes-p','children')],
+            Input('cell-hierarchy','tapNodeData'),
+            prevent_initial_call=True
+        )(self.get_cyto_data)
+
+        self.app.callback(
+            [Input('ftu-select','value'),
+            Input('plot-select','value'),
+            Input('label-select','value')],
+            [Output('cluster-graph','figure'),
+            Output('label-select','options')],
+        )(self.update_graph)
+
+        self.app.callback(
+            [Input('cluster-graph','clickData'),
+            Input('cluster-graph','selectedData')],
+            [Output('selected-image','figure'),
+            Output('selected-cell-types','figure'),
+            Output('selected-cell-states','figure')],
+        )(self.update_selected)
+
+        self.app.callback(
+            Input('selected-cell-types','clickData'),
+            Output('selected-cell-states','figure'),
+            prevent_initial_call=True
+        )(self.update_selected_state_bar)
+
+        self.app.callback(
+            Input('edit_control','geojson'),
+            Output('layer-control','children'),
+            prevent_initial_call=True
+        )(self.add_manual_roi)
+
+        # Callbacks for data download
+        self.app.callback(
+            Input('data-select','value'),
+            Output('data-options','children'),
+            prevent_initial_call = True
+        )(self.update_download_options)
+
+        """
+        self.app.callback(
+            [Input({'type':'download-opts','index':MATCH},'value'),
+            Input({'type':'download-butt','index':MATCH},'n_clicks')]
+            Output({'type':'download-data','index':MATCH},'data')
+        )(self.download_data)
+        
+        """
+
 
     def builder_callbacks(self):
 
@@ -1390,7 +1413,120 @@ class SlideHeatVis:
                 raise exceptions.PreventUpdate
         else:
             raise exceptions.PreventUpdate    
+
+    def update_download_options(self,selected_data):
+        print(f'selected_data: {selected_data}')
+        new_children = []
+        tab_labels = []
+
+        options_idx = 0
+        for d in selected_data:
+            if d == 'Annotations':
+                # After selecting annotations, users can select whether they want the annotations in
+                # JSON, GeoJSON, or Aperio XML format (eventually also OME-TIFF but that might be too large).
+                # They can also select whether they want the cell types/states info to be included with the annotations or
+                # saved as a spreadsheet with some row labels for each FTU.
+                child = dbc.Card([
+                    dbc.Label('Format for annotations:'),
+                    dbc.Row(
+                        dcc.RadioItems(['Aperio XML','Histomics JSON','GeoJSON'],
+                            'Aperio XML',
+                            inline=True,
+                            id = {'type':'download-opts','index':options_idx})
+                        ),
+                    html.Hr(),
+                    html.Button('Download Annotations',id = {'type':'download-butt','index':options_idx}),
+                    dcc.Download(id = {'type':'download-data','index':options_idx})
+                ])
+
+                new_children.append(child)
+                tab_labels.append(d)
+                options_idx+=1
+
+            if d == 'Slide Metadata':
+                # After selecting slide metadata, users select which labels they want to keep slide-level metadata
+                # names of slides, disease label (if there), numbers and names of FTUs, tissue type, omics type, per-FTU properties
+                child = dbc.Card([
+                    dbc.Label('Select per-slide properties:'),
+                    dbc.Row(
+                        dcc.Dropdown(
+                            ['FTU Properties', 'Tissue Type','Omics Type','Slide Metadata', 'FTU Counts'],
+                            ['FTU Properties', 'Tissue Type','Omics Type','Slide Metadata', 'FTU Counts'],
+                            multi=True,
+                            id = {'type':'download-opts','index':options_idx} 
+                        )
+                    ),
+                    html.Button('Download Slide Data',id = {'type':'download-butt','index':options_idx}),
+                    dcc.Download(id = {'type':'download-data','index':options_idx})
+                ])
+
+                new_children.append(child)
+                tab_labels.append(d)
+                options_idx+=1
+
+            if d == 'Cell Type and State':
+                # Outputting cell type and state info in different formats
+                child = dbc.Card([
+                    dbc.Label('Format for Cell Types and States:'),
+                    dbc.Row(
+                        dcc.RadioItems(['CSV Files','Excel File','RDS File'],
+                        'CSV Files',
+                        inline=True,
+                        id = {'type':'download-opts','index':options_idx})
+                    ),
+                    html.Button('Download Cell Type Data', id = {'type':'download-butt','index':options_idx}),
+                    dcc.Download(id = {'type':'download-data','index':options_idx})
+                ])
+
+                new_children.append(child)
+                tab_labels.append(d)
+                options_idx+=1
+
+            if d == 'Selected FTUs and Metadata':
+                # Saving selected FTU image regions and cell type/state info
+                child = dbc.Card([
+                    dbc.Label('Selected FTU Data to Save'),
+                    dbc.Row(
+                        dcc.RadioItems(['Image & Cell Type/State Information','Image Only','Cell Type/State Only'],
+                        'Image & Cell Type/State Information',
+                        inline = True,
+                        id = {'type':'download-opts','index':options_idx})
+                    ),
+                    html.Button('Download Selected FTUs Data', id = {'type':'download-butt','index':options_idx}),
+                    dcc.Download(id = {'type':'download-data','index':options_idx})
+                ])
+
+                new_children.append(child)
+                tab_labels.append(d)
+                options_idx+=1
+
+            if d == 'Manual ROIs':
+                # Saving manually generated ROIs and cell type/state info
+                child = dbc.Card([
+                    dbc.Label('Manual ROI Data to Save'),
+                    dbc.Row(
+                        dcc.RadioItems(['Image & Cell Type/State Information','Image Only','Cell Type/State Only'],
+                        'Image & Cell Type/State Information',
+                        inline=True,
+                        id = {'type':'download-opts','index':options_idx})
+                    ),
+                    html.Button('Download Manual ROI Data', id = {'type':'download-butt','index':options_idx}),
+                    dcc.Download(id = {'type':'download-data','index':options_idx})
+                ])    
+
+                new_children.append(child)
+                tab_labels.append(d)
+                options_idx+=1
+
+        tab_data = []
+        for t,l in zip(new_children,tab_labels):
+            tab_data.append(dbc.Tab(t,label=l))
         
+        new_children = dbc.Tabs(tab_data)
+
+        return new_children
+
+
 
 
 #if __name__ == '__main__':

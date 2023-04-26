@@ -331,6 +331,7 @@ class LayoutHandler:
         # Extracting data tab
         data_options = [
             {'label':'Annotations','value':'Annotations','disabled':False},
+            {'label':'Cell Type and State','value':'Cell Type and State','disabled':False},
             {'label':'Slide Metadata','value':'Slide Metadata','disabled':False},
             {'label':'Selected FTUs and Metadata','value':'Selected FTUs and Metadata','disabled':True},
             {'label':'Manual ROIs','value':'Manual ROIs','disabled':True}
