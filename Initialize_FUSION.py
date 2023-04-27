@@ -15,7 +15,11 @@ import json
 import geojson
 
 import pandas as pd
+import numpy as np
 from glob import glob
+import lxml.etree as ET
+from geojson import Feature, dump 
+import uuid
 
 import plotly.express as px
 import plotly.graph_objects as go
@@ -741,6 +745,123 @@ class DatasetHandler:
         else:
             raise ValueError
 
+
+class DownloadHandler:
+    def __init__(self,
+                dataset_object,
+                verbose = False):
+        
+        self.dataset_object = dataset_object
+        self.verbose = verbose
+
+        # Placeholder for lots of re-formatting and stuff
+
+    def extract_annotations(self, slide, format):
+        
+        # Extracting annotations from the current slide object
+        annotations = slide.geojson_ftus
+
+        # Making output scale for the coordinates
+        width_scale = slide.wsi_dims[0]/slide.slide_bounds[2]
+        height_scale = slide.wsi_dims[1]/slide.slide_bounds[3]
+
+        if format=='GeoJSON':
+            
+            # Have to re-normalize coordinates and only save one or two properties
+            final_ann = {'type':'FeatureCollection','features':[]}
+            for f in annotations['features']:
+                f_dict = {'type':'Feature','geometry':{'type':'Polygon','coordinates':[]}}
+
+                scaled_coords = np.array(f['geometry']['coordinates'])
+                scaled_coords[:,0] *= height_scale
+                scaled_coords[:,1] *= width_scale
+                scaled_coords = scaled_coords.astype(int).tolist()
+                f_dict['geometry']['coordinates'] = scaled_coords
+
+                f_dict['properties'] = {'label':f['properties']['label'], 'structure':f['properties']['structure']}
+
+                final_ann['features'].append(f_dict)
+
+        elif format == 'Aperio XML':
+            
+            # Initializing xml file
+            final_ann = ET.Element('Annotations')
+
+            for l,name in enumerate(list(slide.ftus.keys())):
+                # Need some kinda random color here
+                ann = ET.SubElement(final_ann,'Annotation',attrib={'Type':'4','Visible':'1','ReadOnly':'0',
+                                                            'Incremental':'0','LineColorReadOnly':'0',
+                                                            'LineColor':'65280','Id':str(l),'NameReadOnly':'0'})
+                
+                regions = ET.SubElement(ann,'Regions')
+
+                # Getting the features to add to this layer based on name
+                layer_features = [i for i in annotations['features'] if i['properties']['structure']==name]
+
+                for r_idx,f in enumerate(layer_features):
+
+                    region = ET.SubElement(regions,'Region',attrib = {'NegativeROA':'0','ImageFocus':'-1',
+                                                                    'DisplayId':'1','InputRegionId':'0',
+                                                                    'Analyze':'0','Type':'0','Id':str(r_idx),
+                                                                    'Text': f['properties']['label']})
+
+                    verts = ET.SubElement(region,'Vertices')
+                    scaled_coords = np.array(f['geometry']['coordinates'])
+                    scaled_coords[:,0] *= height_scale
+                    scaled_coords[:,1] *= width_scale
+                    scaled_coords = scaled_coords.astype(int).tolist()
+
+                    for v in scaled_coords:
+                        ET.SubElement(verts,'Vertex',attrib={'X':str(v[1]),'Y':str(v[0]),'Z':'0'})
+
+                    ET.SubElement(verts,'Vertex',attrib={'X':str(scaled_coords[0][1]),'Y':str(scaled_coords[0][0]),'Z':'0'})
+
+            final_ann = ET.tostring(final_ann,encoding='unicode',pretty_print=True)
+
+        elif format == 'Histomics JSON':
+            
+            # Following histomics JSON formatting
+            final_ann = []
+
+            for ftu_name in list(slide.ftus.keys()):
+
+                output_dict = {'name':ftu_name,'attributes':{},'elements':[]}
+                ftu_annotations = [i for i in annotations['features'] if i['properties']['structure']==ftu_name]
+
+                for f in ftu_annotations:
+                    scaled_coords = np.array(f['geometry']['coordinates'])
+                    scaled_coords[:,0] *= height_scale
+                    scaled_coords[:,1] *= width_scale
+                    scaled_coords = scaled_coords.astype(int).tolist()
+
+                    struct_id = uuid.uuid4().hex[:24]
+                    struct_dict = {
+                        'type':'polyline',
+                        'points':[i+[0] for i in scaled_coords],
+                        'id':struct_id,
+                        'closed':True,
+                        'user':{
+                            'label':f['properties']['label']
+                        }
+                    }
+                    output_dict.append(struct_dict)
+
+            final_ann.append(output_dict)
+
+        return final_ann
+    
+    """
+    def extract_metadata(self,slides, include_meta):
+    
+
+    def extract_cell(self, slide, format):
+
+    
+    def extract_ftu(self, slide, data):
+    
+
+    def extract_manual(self, slide, data):
+    """
 
 @dataclass
 class Callback:

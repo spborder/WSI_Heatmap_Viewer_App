@@ -1429,13 +1429,19 @@ class SlideHeatVis:
                 child = dbc.Card([
                     dbc.Label('Format for annotations:'),
                     dbc.Row(
-                        dcc.RadioItems(['Aperio XML','Histomics JSON','GeoJSON'],
-                            'Aperio XML',
+                        dcc.RadioItems(
+                            [{'label':html.Div(['Aperio XML'],style = {'padding-left':'50px','padding-right':'10px'}),'value':'Aperio XML'},
+                             {'label':html.Div(['Histomics JSON'],style={'padding-left':'50px','padding-right':'10px'}),'value':'Histomics JSON'},
+                             {'label':html.Div(['GeoJSON'],style={'padding-left':'50px','padding-right':'10px'}),'value':'GeoJSON'}],
+                            value = 'Aperio XML',
                             inline=True,
-                            id = {'type':'download-opts','index':options_idx})
+                            id = {'type':'download-opts','index':options_idx},
+                            labelStyle={'display':'flex'}),
+                            style = {'marginBottom':'20px'}
                         ),
                     html.Hr(),
-                    html.Button('Download Annotations',id = {'type':'download-butt','index':options_idx}),
+                    html.B(),
+                    dbc.Button('Download Annotations',color = 'primary',id = {'type':'download-butt','index':options_idx}),
                     dcc.Download(id = {'type':'download-data','index':options_idx})
                 ])
 
@@ -1446,6 +1452,7 @@ class SlideHeatVis:
             if d == 'Slide Metadata':
                 # After selecting slide metadata, users select which labels they want to keep slide-level metadata
                 # names of slides, disease label (if there), numbers and names of FTUs, tissue type, omics type, per-FTU properties
+
                 child = dbc.Card([
                     dbc.Label('Select per-slide properties:'),
                     dbc.Row(
@@ -1454,9 +1461,11 @@ class SlideHeatVis:
                             ['FTU Properties', 'Tissue Type','Omics Type','Slide Metadata', 'FTU Counts'],
                             multi=True,
                             id = {'type':'download-opts','index':options_idx} 
-                        )
+                        ),style = {'marginBottom':'20px'}
                     ),
-                    html.Button('Download Slide Data',id = {'type':'download-butt','index':options_idx}),
+                    html.Hr(),
+                    html.B(),
+                    dbc.Button('Download Slide Data',color = 'primary', id = {'type':'download-butt','index':options_idx}),
                     dcc.Download(id = {'type':'download-data','index':options_idx})
                 ])
 
@@ -1466,15 +1475,24 @@ class SlideHeatVis:
 
             if d == 'Cell Type and State':
                 # Outputting cell type and state info in different formats
+                cell_type_items = [
+                    {'label':html.Div(['CSV Files'],style = {'padding-left':'50px','padding-right':'10px'}),'value':'CSV Files'},
+                    {'label':html.Div(['Excel File'],style = {'padding-left':'50px','padding-right':'10px'}),'value':'Excel File'},
+                    {'label':html.Div(['RDS File'],style = {'padding-left':'50px','padding-right':'10px'}),'value':'RDS File'}
+                ]
                 child = dbc.Card([
                     dbc.Label('Format for Cell Types and States:'),
                     dbc.Row(
-                        dcc.RadioItems(['CSV Files','Excel File','RDS File'],
-                        'CSV Files',
+                        dcc.RadioItems(cell_type_items,
+                        value = 'CSV Files',
                         inline=True,
-                        id = {'type':'download-opts','index':options_idx})
+                        id = {'type':'download-opts','index':options_idx},
+                        labelStyle={'display':'flex'}),
+                        style = {'marginBottom':'20px'}
                     ),
-                    html.Button('Download Cell Type Data', id = {'type':'download-butt','index':options_idx}),
+                    html.Hr(),
+                    html.B(),
+                    dbc.Button('Download Cell Type Data', color = 'primary', id = {'type':'download-butt','index':options_idx}),
                     dcc.Download(id = {'type':'download-data','index':options_idx})
                 ])
 
@@ -1484,15 +1502,26 @@ class SlideHeatVis:
 
             if d == 'Selected FTUs and Metadata':
                 # Saving selected FTU image regions and cell type/state info
+                include_opts = ['Image & Cell Type/State Information','Image Only','Cell Type/State Only']
+                select_ftu_list = []
+                for i in include_opts:
+                    select_ftu_list.append(
+                        {'label':html.Div([i],style={'padding-left':'50px','padding-right':'10px'}),'value':i}
+                    )          
+
                 child = dbc.Card([
                     dbc.Label('Selected FTU Data to Save'),
                     dbc.Row(
-                        dcc.RadioItems(['Image & Cell Type/State Information','Image Only','Cell Type/State Only'],
-                        'Image & Cell Type/State Information',
+                        dcc.RadioItems(select_ftu_list,
+                        include_opts[0],
                         inline = True,
-                        id = {'type':'download-opts','index':options_idx})
+                        id = {'type':'download-opts','index':options_idx},
+                        labelStyle={'display':'flex'}),
+                        style = {'marginBottom':'20px'}
                     ),
-                    html.Button('Download Selected FTUs Data', id = {'type':'download-butt','index':options_idx}),
+                    html.Hr(),
+                    html.B(),
+                    dbc.Button('Download Selected FTUs Data', color = 'primary',id = {'type':'download-butt','index':options_idx}),
                     dcc.Download(id = {'type':'download-data','index':options_idx})
                 ])
 
@@ -1502,15 +1531,26 @@ class SlideHeatVis:
 
             if d == 'Manual ROIs':
                 # Saving manually generated ROIs and cell type/state info
+                include_opts = ['Image & Cell Type/State Information','Image Only','Cell Type/State Only']
+                select_ftu_list = []
+                for i in include_opts:
+                    select_ftu_list.append(
+                        {'label':html.Div([i],style={'padding-left':'50px','padding-right':'10px'}),'value':i}
+                    )          
+
                 child = dbc.Card([
                     dbc.Label('Manual ROI Data to Save'),
                     dbc.Row(
-                        dcc.RadioItems(['Image & Cell Type/State Information','Image Only','Cell Type/State Only'],
-                        'Image & Cell Type/State Information',
+                        dcc.RadioItems(select_ftu_list,
+                        include_opts[0],
                         inline=True,
-                        id = {'type':'download-opts','index':options_idx})
+                        id = {'type':'download-opts','index':options_idx},
+                        labelStyle={'display':'flex'}),
+                        style = {'marginBottom':'20px'}
                     ),
-                    html.Button('Download Manual ROI Data', id = {'type':'download-butt','index':options_idx}),
+                    html.Hr(),
+                    html.B(),
+                    dbc.Button('Download Manual ROI Data', color = 'primary',id = {'type':'download-butt','index':options_idx}),
                     dcc.Download(id = {'type':'download-data','index':options_idx})
                 ])    
 
@@ -1519,10 +1559,12 @@ class SlideHeatVis:
                 options_idx+=1
 
         tab_data = []
+        id_count = 0
         for t,l in zip(new_children,tab_labels):
-            tab_data.append(dbc.Tab(t,label=l))
+            tab_data.append(dbc.Tab(t,label=l,id=f'tab_{id_count}'))
+            id_count+=1
         
-        new_children = dbc.Tabs(tab_data)
+        new_children = dbc.Tabs(tab_data,active_tab = 'tab_0')
 
         return new_children
 

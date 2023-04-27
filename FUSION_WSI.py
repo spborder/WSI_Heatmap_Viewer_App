@@ -30,6 +30,7 @@ class WholeSlide:
         self.spot_path = spot_path
         self.slide_info_dict = slide_info_dict
         self.slide_bounds = self.slide_info_dict['bounds']
+        self.wsi_dims = self.slide_info_dict['wsi_dims']
         self.slide_name = slide_name
 
         self.manual_rois = manual_rois
