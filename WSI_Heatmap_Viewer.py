@@ -1351,62 +1351,71 @@ class SlideHeatVis:
             print(f'manual_roi:{new_geojson}')
             if not new_geojson is None:
                 if len(new_geojson['features'])>0:
-
-                    # Only getting the most recent to add
-                    new_geojson = {'type':'FeatureCollection','features':[new_geojson['features'][len(self.wsi.manual_rois)]]}
-                    print(f'new_geojson: {new_geojson}')
-
-                    # New geojson has no properties which can be used for overlays or anything so we have to add those
-                    # Step 1, find intersecting spots:
-                    overlap_dict = self.wsi.find_intersecting_spots(shape(new_geojson['features'][0]['geometry']))
-                    main_counts_data = pd.DataFrame(overlap_dict['main_counts']).sum(axis=0).to_frame()
-                    main_counts_data = (main_counts_data/main_counts_data.sum()).fillna(0.000).round(decimals=18)
-
-                    main_counts_data[0] = main_counts_data[0].map('{:.19f}'.format)
                     
-                    main_counts_dict = main_counts_data.astype(float).to_dict()[0]
+                    if not new_geojson['features'][len(self.wsi.manual_rois)]['properties']['type']=='marker':
+                        # Only getting the most recent to add
+                        new_geojson = {'type':'FeatureCollection','features':[new_geojson['features'][len(self.wsi.manual_rois)]]}
+                        print(f'new_geojson: {new_geojson}')
 
-                    agg_cell_states = {}
-                    for m_c in list(main_counts_dict.keys()):
-                        cell_states = pd.DataFrame([i[m_c] for i in overlap_dict['states']]).sum(axis=0).to_frame()
-                        cell_states = (cell_states/cell_states.sum()).fillna(0.000).round(decimals=18)
+                        # New geojson has no properties which can be used for overlays or anything so we have to add those
+                        # Step 1, find intersecting spots:
+                        overlap_dict = self.wsi.find_intersecting_spots(shape(new_geojson['features'][0]['geometry']))
+                        main_counts_data = pd.DataFrame(overlap_dict['main_counts']).sum(axis=0).to_frame()
+                        main_counts_data = (main_counts_data/main_counts_data.sum()).fillna(0.000).round(decimals=18)
 
-                        cell_states[0] = cell_states[0].map('{:.19f}'.format)
+                        main_counts_data[0] = main_counts_data[0].map('{:.19f}'.format)
+                        
+                        main_counts_dict = main_counts_data.astype(float).to_dict()[0]
 
-                        agg_cell_states[m_c] = cell_states.astype(float).to_dict()[0]
+                        agg_cell_states = {}
+                        for m_c in list(main_counts_dict.keys()):
+                            cell_states = pd.DataFrame([i[m_c] for i in overlap_dict['states']]).sum(axis=0).to_frame()
+                            cell_states = (cell_states/cell_states.sum()).fillna(0.000).round(decimals=18)
+
+                            cell_states[0] = cell_states[0].map('{:.19f}'.format)
+
+                            agg_cell_states[m_c] = cell_states.astype(float).to_dict()[0]
+                        
+
+                        new_geojson['features'][0]['properties']['Main_Cell_Types'] = main_counts_dict
+                        new_geojson['features'][0]['properties']['Cell_States'] = agg_cell_states
+
+                        print(f'Length of wsi.manual_rois: {len(self.wsi.manual_rois)}')
+                        print(f'Length of current_overlays: {len(self.current_overlays)}')
+
+                        self.wsi.manual_rois.append(
+                            {
+                                'geojson':new_geojson,
+                                'id':{'type':'ftu-bounds','index':len(self.current_overlays)},
+                                'hover_color':'#32a852'
+                            }
+                        )
+
+                        print(f'Length of wsi.manual_rois: {len(self.wsi.manual_rois)}')
+                        # Updating the hex color key with new values
+                        self.update_hex_color_key('cell_value')
+
+                        new_child = dl.Overlay(
+                            dl.LayerGroup(
+                                dl.GeoJSON(data = new_geojson, id = {'type':'ftu-bounds','index':len(self.current_overlays)}, options = dict(style=self.ftu_style_handle),
+                                    hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = self.cell_vis_val),
+                                    hoverStyle = arrow_function(dict(weight=5, color = '#32a852',dashArray = ''))
+                                )
+                            ), name = f'Manual ROI {len(self.wsi.manual_rois)}', checked = True, id = self.wsi.slide_info_dict['key_name']+f'_manual_roi{len(self.wsi.manual_rois)}'
+                        )
+
+                        self.current_overlays.append(new_child)
+                        print(f'Length of current_overlays: {len(self.current_overlays)}')
+
+                        return self.current_overlays
                     
+                    elif new_geojson['features'][len(self.wsi.manual_rois)]['properties']['type']=='marker':
+                        # Find the ftu that this marker is included in if there is one otherwise 
 
-                    new_geojson['features'][0]['properties']['Main_Cell_Types'] = main_counts_dict
-                    new_geojson['features'][0]['properties']['Cell_States'] = agg_cell_states
+                        # TODO: placeholder for adding the marked FTU to the slide's list of marked FTUs
 
-                    print(f'Length of wsi.manual_rois: {len(self.wsi.manual_rois)}')
-                    print(f'Length of current_overlays: {len(self.current_overlays)}')
 
-                    self.wsi.manual_rois.append(
-                        {
-                            'geojson':new_geojson,
-                            'id':{'type':'ftu-bounds','index':len(self.current_overlays)},
-                            'hover_color':'#32a852'
-                        }
-                    )
-
-                    print(f'Length of wsi.manual_rois: {len(self.wsi.manual_rois)}')
-                    # Updating the hex color key with new values
-                    self.update_hex_color_key('cell_value')
-
-                    new_child = dl.Overlay(
-                        dl.LayerGroup(
-                            dl.GeoJSON(data = new_geojson, id = {'type':'ftu-bounds','index':len(self.current_overlays)}, options = dict(style=self.ftu_style_handle),
-                                hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = self.cell_vis_val),
-                                hoverStyle = arrow_function(dict(weight=5, color = '#32a852',dashArray = ''))
-                            )
-                        ), name = f'Manual ROI {len(self.wsi.manual_rois)}', checked = True, id = self.wsi.slide_info_dict['key_name']+f'_manual_roi{len(self.wsi.manual_rois)}'
-                    )
-
-                    self.current_overlays.append(new_child)
-                    print(f'Length of current_overlays: {len(self.current_overlays)}')
-
-                    return self.current_overlays
+                        raise exceptions.PreventUpdate
                 else:
                     raise exceptions.PreventUpdate
             else:

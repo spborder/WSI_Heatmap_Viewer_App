@@ -853,10 +853,33 @@ class DownloadHandler:
     """
     def extract_metadata(self,slides, include_meta):
     
+    """
+    def extract_cell(self, slide):
+        # Output here is a dictionary containing Main_Cell_Types and Cell_States for each FTU
+        # Main_Cell_Types is a pd.DataFrame with a column for every cell type and an index of the FTU label
+        # Cell states is a dictionary of pd.DataFrames with a column for every cell state and an index of the FTU label for each main cell type
 
-    def extract_cell(self, slide, format):
+        final_cell_info = {}
+        for ftu in list(slide.ftus.keys()):
 
-    
+            ftu_annotations = [i for i in slide.geojson_ftus['features'] if i['properties']['structure']==ftu]
+            ftu_main_cells = pd.DataFrame.from_records([i['properties']['Main_Cell_Types'] for i in ftu_annotations])
+            ftu_main_cells.index = [i['properties']['label'] for i in ftu_annotations]
+            
+            cell_types = ftu_main_cells.columns
+            ftu_cell_states = {}
+            for c in cell_types:
+
+                cell_state_df = pd.DataFrame.from_records([i['properties']['Cell_States'][c] for i in ftu_annotations])
+                cell_state_df.index = [i['properties']['label'] for i in ftu_annotations]
+                ftu_cell_states[c] = cell_state_df
+            
+
+            final_cell_info[ftu] = {'Main_Cell_Types':ftu_main_cells,'Cell_States':ftu_cell_states}
+
+        return final_cell_info
+
+    """
     def extract_ftu(self, slide, data):
     
 
