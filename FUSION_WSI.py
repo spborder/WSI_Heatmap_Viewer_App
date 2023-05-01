@@ -23,6 +23,7 @@ class WholeSlide:
                 ftu_path,
                 spot_path,
                 manual_rois = None,
+                marked_ftus = None,
                 verbose = False):
         
         self.image_url = image_url
@@ -36,6 +37,10 @@ class WholeSlide:
         self.manual_rois = manual_rois
         if self.manual_rois is None:
             self.manual_rois = []
+
+        self.marked_ftus = marked_ftus
+        if self.marked_ftus is None:
+            self.marked_ftus = []
 
         self.slide_ext = self.slide_name.split('.')[-1]
 

@@ -20,6 +20,8 @@ from glob import glob
 import lxml.etree as ET
 from geojson import Feature, dump 
 import uuid
+import zipfile
+import shutil
 
 import plotly.express as px
 import plotly.graph_objects as go
@@ -756,6 +758,75 @@ class DownloadHandler:
 
         # Placeholder for lots of re-formatting and stuff
 
+    def what_data(self,download_options):
+        # Figuring out what data to return based on download_options used
+
+        if download_options in ['Aperio XML','Histomics JSON','GeoJSON']:
+
+            return 'annotations'
+        
+        elif download_options in ['CSV Files','Excel File','RDS File']:
+
+            return 'cell'
+        
+        elif any([i in ['FTU Properties','Tissue Type','Omics Type','Slide Metadata','FTU Counts'] for i in download_options]):
+
+            return 'metadata'
+        
+        elif 'man' in download_options:
+
+            return 'manual_rois'
+        
+        else:
+
+            return 'select_ftus'
+
+    def zip_data(self,download_data_list):
+
+        # Writing temporary directory 
+        if not os.path.exists('./assets/FUSION_Download/'):
+            os.makedirs('./assets/FUSION_Download/')
+
+        output_file = './assets/FUSION_Download.zip'
+        # Writing files to the temp directory
+        for d in download_data_list:
+            filename = d['filename']
+            file_ext = filename.split('.')[-1]
+
+            save_path = './assets/FUSION_Download/'+filename
+
+            if file_ext in ['xml','json','geojson']:
+
+                if file_ext == 'xml':
+                    
+                    # Writing xml data
+                    with open(save_path,'w') as f:
+                        f.write(d['content'])
+                        f.close()
+                else:
+                    # Writing JSON data
+                    with open(save_path,'w') as f:
+                        dump(d['content'],f)
+
+            elif file_ext == 'csv':
+
+                d['content'].to_csv(save_path)
+            
+            elif file_ext == 'xlsx':
+                # If it's supposed to be an excel file, include sheet name as a key
+                with pd.ExcelWriter(save_path,mode='a') as writer:
+                    d['content'].to_excel(writer,sheet_name=d['sheet'],engine='openpyxl')
+
+        # Writing temporary data to a zip file
+        with zipfile.ZipFile(output_file,'w', zipfile.ZIP_DEFLATED) as zip:
+            for file in os.listdir('./assets/FUSION_Download/'):
+                zip.write('./assets/FUSION_Download/'+file)
+
+        try:
+            shutil.rmtree('./assets/FUSION_Download/')
+        except OSError as e:
+            print(f'OSError removing FUSION_Download directory: {e.strerror}')
+
     def extract_annotations(self, slide, format):
         
         # Extracting annotations from the current slide object
@@ -767,12 +838,14 @@ class DownloadHandler:
 
         if format=='GeoJSON':
             
+            save_name = slide.slide_name.replace('.'+slide.slide_ext,'.geojson')
+
             # Have to re-normalize coordinates and only save one or two properties
             final_ann = {'type':'FeatureCollection','features':[]}
             for f in annotations['features']:
                 f_dict = {'type':'Feature','geometry':{'type':'Polygon','coordinates':[]}}
 
-                scaled_coords = np.array(f['geometry']['coordinates'])
+                scaled_coords = np.squeeze(np.array(f['geometry']['coordinates']))
                 scaled_coords[:,0] *= height_scale
                 scaled_coords[:,1] *= width_scale
                 scaled_coords = scaled_coords.astype(int).tolist()
@@ -784,6 +857,8 @@ class DownloadHandler:
 
         elif format == 'Aperio XML':
             
+            save_name = slide.slide_name.replace('.'+slide.slide_ext,'.xml')
+
             # Initializing xml file
             final_ann = ET.Element('Annotations')
 
@@ -806,7 +881,7 @@ class DownloadHandler:
                                                                     'Text': f['properties']['label']})
 
                     verts = ET.SubElement(region,'Vertices')
-                    scaled_coords = np.array(f['geometry']['coordinates'])
+                    scaled_coords = np.squeeze(np.array(f['geometry']['coordinates']))
                     scaled_coords[:,0] *= height_scale
                     scaled_coords[:,1] *= width_scale
                     scaled_coords = scaled_coords.astype(int).tolist()
@@ -820,6 +895,8 @@ class DownloadHandler:
 
         elif format == 'Histomics JSON':
             
+            save_name = slide.slide_name.replace('.'+slide.slide_ext,'.json')
+
             # Following histomics JSON formatting
             final_ann = []
 
@@ -829,7 +906,7 @@ class DownloadHandler:
                 ftu_annotations = [i for i in annotations['features'] if i['properties']['structure']==ftu_name]
 
                 for f in ftu_annotations:
-                    scaled_coords = np.array(f['geometry']['coordinates'])
+                    scaled_coords = np.squeeze(np.array(f['geometry']['coordinates']))
                     scaled_coords[:,0] *= height_scale
                     scaled_coords[:,1] *= width_scale
                     scaled_coords = scaled_coords.astype(int).tolist()
@@ -844,17 +921,17 @@ class DownloadHandler:
                             'label':f['properties']['label']
                         }
                     }
-                    output_dict.append(struct_dict)
+                    output_dict['elements'].append(struct_dict)
 
             final_ann.append(output_dict)
 
-        return final_ann
+        return [{'filename': save_name, 'content':final_ann}]
     
     """
     def extract_metadata(self,slides, include_meta):
     
     """
-    def extract_cell(self, slide):
+    def extract_cell(self, slide, file_format):
         # Output here is a dictionary containing Main_Cell_Types and Cell_States for each FTU
         # Main_Cell_Types is a pd.DataFrame with a column for every cell type and an index of the FTU label
         # Cell states is a dictionary of pd.DataFrames with a column for every cell state and an index of the FTU label for each main cell type
@@ -877,7 +954,36 @@ class DownloadHandler:
 
             final_cell_info[ftu] = {'Main_Cell_Types':ftu_main_cells,'Cell_States':ftu_cell_states}
 
-        return final_cell_info
+        # Formatting for downloads
+        base_save_name = slide.slide_name.replace('.'+slide.slide_ext,'')
+        download_data = []
+        for ftu in list(final_cell_info.keys()):
+
+            # Main cell types should just be one file
+            print(f'file_format: {file_format}')
+            if file_format=='Excel File':
+                main_content = {'filename':base_save_name+'_Main_Cell_Types.xlsx','sheet':ftu,'content':final_cell_info[ftu]['Main_Cell_Types']}
+            elif file_format=='CSV Files':
+                main_content = {'filename':base_save_name+f'_Main_Cell_Types_{ftu}.csv','content':final_cell_info[ftu]['Main_Cell_Types']}
+            else:
+                print('Invalid format (RDS will come later)')
+                main_content = {}
+            
+            download_data.append(main_content)
+
+            # Cell state info
+            for mc in final_cell_info[ftu]['Cell_States']:
+                if file_format=='Excel File':
+                    state_content = {'filename':base_save_name+f'_{ftu}_Cell_States.xlsx','sheet':mc.replace('/',''),'content':final_cell_info[ftu]['Cell_States'][mc]}
+                elif file_format=='CSV Files':
+                    state_content = {'filename':base_save_name+f'_{ftu}_{mc.replace("/","")}_Cell_States.csv','content':final_cell_info[ftu]['Cell_States'][mc]}
+                else:
+                    print('Invalid format (RDS will come later)')
+                    state_content = {}
+
+                download_data.append(state_content)
+
+        return download_data
 
     """
     def extract_ftu(self, slide, data):

@@ -35,18 +35,22 @@ from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 from matplotlib import cm
 
-from dash import dcc, ctx, Dash, MATCH, ALL, dash_table, exceptions, callback_context
+from dash import dcc, ctx, Dash, MATCH, ALL, ALLSMALLER, dash_table, exceptions, callback_context
+#from dash.long_callback import DiskcacheLongCallbackManager
+
 import dash_bootstrap_components as dbc
 import dash_cytoscape as cyto
 import dash_leaflet as dl
 import dash_leaflet.express as dlx
 from dash_extensions.javascript import assign, Namespace, arrow_function
 from dash_extensions.enrich import DashProxy, html, Input, Output, MultiplexerTransform, State
+from dash_extensions import Download
 
 from timeit import default_timer as timer
+#import diskcache
 
 from FUSION_WSI import WholeSlide
-from Initialize_FUSION import DatasetHandler, LayoutHandler
+from Initialize_FUSION import DatasetHandler, LayoutHandler, DownloadHandler
 
 
 class SlideHeatVis:
@@ -54,6 +58,7 @@ class SlideHeatVis:
                 app,
                 layout_handler,
                 dataset_handler,
+                download_handler,
                 wsi,
                 cell_graphics_key,
                 asct_b_table,
@@ -67,6 +72,10 @@ class SlideHeatVis:
 
         self.dataset_handler = dataset_handler
         self.current_overlays = self.layout_handler.initial_overlays
+
+        self.download_handler = download_handler
+        #self.cache = diskcache.Cache("./cache")
+        #self.long_callback_manager = DiskcacheLongCallbackManager(self.cache)
 
         # Setting some app-related things
         self.app = app
@@ -199,7 +208,7 @@ class SlideHeatVis:
 
         # Comment out this line when running on the web
         if self.run_type == 'local':
-            self.app.run_server(debug=True,use_reloader=True,port=8000)
+            self.app.run_server(debug=False,use_reloader=False,port=8000)
 
         elif self.run_type == 'AWS':
             self.app.run_server(host = '0.0.0.0',debug=False,use_reloader=False,port=8000)
@@ -352,14 +361,13 @@ class SlideHeatVis:
             prevent_initial_call = True
         )(self.update_download_options)
 
-        """
         self.app.callback(
             [Input({'type':'download-opts','index':MATCH},'value'),
-            Input({'type':'download-butt','index':MATCH},'n_clicks')]
-            Output({'type':'download-data','index':MATCH},'data')
+            Input({'type':'download-butt','index':MATCH},'n_clicks')],
+            Output({'type':'download-data','index':MATCH},'data'),
+            prevent_initial_call = True
         )(self.download_data)
         
-        """
 
 
     def builder_callbacks(self):
@@ -1413,6 +1421,9 @@ class SlideHeatVis:
                         # Find the ftu that this marker is included in if there is one otherwise 
 
                         # TODO: placeholder for adding the marked FTU to the slide's list of marked FTUs
+                        print(new_geojson['features'][len(self.wsi.manual_rois)])
+
+                        # Find the ftu that intersects with this marker
 
 
                         raise exceptions.PreventUpdate
@@ -1450,8 +1461,12 @@ class SlideHeatVis:
                         ),
                     html.Hr(),
                     html.B(),
-                    dbc.Button('Download Annotations',color = 'primary',id = {'type':'download-butt','index':options_idx}),
-                    dcc.Download(id = {'type':'download-data','index':options_idx})
+                    dcc.Loading(
+                        children = html.Div([
+                            dbc.Button('Download Annotations',color='primary',id={'type':'download-butt','index':options_idx}),
+                            Download(id={'type':'download-data','index':options_idx})
+                            ])
+                    )                    
                 ])
 
                 new_children.append(child)
@@ -1474,8 +1489,12 @@ class SlideHeatVis:
                     ),
                     html.Hr(),
                     html.B(),
-                    dbc.Button('Download Slide Data',color = 'primary', id = {'type':'download-butt','index':options_idx}),
-                    dcc.Download(id = {'type':'download-data','index':options_idx})
+                    dcc.Loading(
+                        children = [
+                            dbc.Button('Download Slide Data',color='primary',id={'type':'download-butt','index':options_idx}),
+                            Download(id={'type':'download-data','index':options_idx})
+                        ]
+                    )                    
                 ])
 
                 new_children.append(child)
@@ -1487,7 +1506,7 @@ class SlideHeatVis:
                 cell_type_items = [
                     {'label':html.Div(['CSV Files'],style = {'padding-left':'50px','padding-right':'10px'}),'value':'CSV Files'},
                     {'label':html.Div(['Excel File'],style = {'padding-left':'50px','padding-right':'10px'}),'value':'Excel File'},
-                    {'label':html.Div(['RDS File'],style = {'padding-left':'50px','padding-right':'10px'}),'value':'RDS File'}
+                    {'label':html.Div(['RDS File'],style = {'padding-left':'50px','padding-right':'10px'}),'value':'RDS File','disabled':True}
                 ]
                 child = dbc.Card([
                     dbc.Label('Format for Cell Types and States:'),
@@ -1501,8 +1520,12 @@ class SlideHeatVis:
                     ),
                     html.Hr(),
                     html.B(),
-                    dbc.Button('Download Cell Type Data', color = 'primary', id = {'type':'download-butt','index':options_idx}),
-                    dcc.Download(id = {'type':'download-data','index':options_idx})
+                    dcc.Loading(
+                        children = [
+                            dbc.Button('Download Cell Type Data',color='primary',id={'type':'download-butt','index':options_idx}),
+                            Download(id={'type':'download-data','index':options_idx})
+                        ]
+                    )                    
                 ])
 
                 new_children.append(child)
@@ -1530,8 +1553,12 @@ class SlideHeatVis:
                     ),
                     html.Hr(),
                     html.B(),
-                    dbc.Button('Download Selected FTUs Data', color = 'primary',id = {'type':'download-butt','index':options_idx}),
-                    dcc.Download(id = {'type':'download-data','index':options_idx})
+                    dcc.Loading(
+                        children = [
+                            dbc.Button('Download Selected FTUs Data',color='primary',id={'type':'download-butt','index':options_idx}),
+                            Download(id={'type':'download-data','index':options_idx})
+                        ]
+                    )
                 ])
 
                 new_children.append(child)
@@ -1544,7 +1571,7 @@ class SlideHeatVis:
                 select_ftu_list = []
                 for i in include_opts:
                     select_ftu_list.append(
-                        {'label':html.Div([i],style={'padding-left':'50px','padding-right':'10px'}),'value':i}
+                        {'label':html.Div([i],style={'padding-left':'50px','padding-right':'10px'}),'value':i+'_man'}
                     )          
 
                 child = dbc.Card([
@@ -1559,8 +1586,12 @@ class SlideHeatVis:
                     ),
                     html.Hr(),
                     html.B(),
-                    dbc.Button('Download Manual ROI Data', color = 'primary',id = {'type':'download-butt','index':options_idx}),
-                    dcc.Download(id = {'type':'download-data','index':options_idx})
+                    dcc.Loading(
+                        children = [
+                            dbc.Button('Download Manual ROI Data', color = 'primary', id = {'type':'download-butt','index':options_idx}),
+                            Download(id={'type':'download-data','index':options_idx})
+                        ]
+                    )                    
                 ])    
 
                 new_children.append(child)
@@ -1577,6 +1608,36 @@ class SlideHeatVis:
 
         return new_children
 
+    def download_data(self,options,button_click):
+        print(ctx.triggered_id)
+        print(options)
+        if button_click:
+            if ctx.triggered_id['type'] == 'download-butt':
+                # Download data has to be a dictionary with content and filename keys. The filename extension will vary
+
+                try:
+                    os.remove('./assets/FUSION_Download.zip')
+                except OSError:
+                    print('No previous download zip file to remove')
+
+                print(f'Download type: {self.download_handler.what_data(options)}')
+                download_type = self.download_handler.what_data(options)
+                if download_type == 'annotations':
+                    download_list = self.download_handler.extract_annotations(self.wsi,options)
+                elif download_type == 'cell':
+                    download_list = self.download_handler.extract_cell(self.wsi,options)
+                else:
+                    print('Working on it!')
+                    download_list = []
+
+                self.download_handler.zip_data(download_list)
+                
+                return dcc.send_file('./assets/FUSION_Download.zip')
+
+            else:
+                raise exceptions.PreventUpdate
+        else:
+            raise exceptions.PreventUpdate
 
 
 
@@ -1675,7 +1736,6 @@ def app(*args):
     current_slide_bounds = slide_info_dict[slide_name]['bounds']
     center_point = [(current_slide_bounds[1]+current_slide_bounds[3])/2,(current_slide_bounds[0]+current_slide_bounds[2])/2]
     
-    ftus = list(dataset_info_dict['ftu']['names'].keys())
     if dataset_info_dict['ftu']['annotation_type']=='GeoJSON':
         map_dict = {
             'url':wsi.image_url,
@@ -1704,8 +1764,21 @@ def app(*args):
     layout_handler.gen_vis_layout(cell_names,center_point,map_dict,spot_dict)
     layout_handler.gen_builder_layout(dataset_handler)
 
+    download_handler = DownloadHandler(dataset_handler)
+
     main_app = DashProxy(__name__,external_stylesheets=external_stylesheets,transforms = [MultiplexerTransform()])
-    vis_app = SlideHeatVis(main_app,layout_handler,dataset_handler,wsi,cell_graphics_key,asct_b_table,metadata,slide_info_dict,run_type)
+    vis_app = SlideHeatVis(
+        main_app,
+        layout_handler,
+        dataset_handler,
+        download_handler,
+        wsi,
+        cell_graphics_key,
+        asct_b_table,
+        metadata,
+        slide_info_dict,
+        run_type
+    )
 
     if run_type=='web':
         return vis_app.app

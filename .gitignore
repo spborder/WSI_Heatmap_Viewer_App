@@ -7,3 +7,6 @@ Cluster_Viewer.py
 Process_Terracotta.py
 *.sqlite
 __pycache__/Initialize_FUSION.cpython-36.pyc
+cache/cache.db
+cache/cache.db-shm
+cache/cache.db-wal
