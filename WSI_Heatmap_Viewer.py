@@ -13,6 +13,8 @@ import json
 from glob import glob
 
 from PIL import Image
+import requests
+from io import BytesIO
 
 try:
     import openslide
@@ -368,8 +370,6 @@ class SlideHeatVis:
             prevent_initial_call = True
         )(self.download_data)
         
-
-
     def builder_callbacks(self):
 
         self.app.callback(
@@ -1419,12 +1419,16 @@ class SlideHeatVis:
                     
                     elif new_geojson['features'][len(self.wsi.manual_rois)]['properties']['type']=='marker':
                         # Find the ftu that this marker is included in if there is one otherwise 
+                        new_geojson = {'type':'FeatureCollection','features':[new_geojson['features'][len(self.wsi.manual_rois)]]}
 
                         # TODO: placeholder for adding the marked FTU to the slide's list of marked FTUs
                         print(new_geojson['features'][len(self.wsi.manual_rois)])
 
                         # Find the ftu that intersects with this marker
-
+                        overlap_dict = self.wsi.find_intersecting_ftu(shape(new_geojson['features'][0]['geometry']))
+                        print(f'Intersecting FTUs with marker: {overlap_dict}')
+                        if len(overlap_dict['polys'])>0:
+                            self.wsi.marked_ftus.append(overlap_dict)
 
                         raise exceptions.PreventUpdate
                 else:
