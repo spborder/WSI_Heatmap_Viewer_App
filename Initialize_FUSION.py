@@ -335,7 +335,7 @@ class LayoutHandler:
                 cell_types_list.append({'label':c+' (In Progress)','value':c,'disabled':True})
 
         # Extracting data tab
-        data_options = [
+        self.data_options = [
             {'label':'Annotations','value':'Annotations','disabled':False},
             {'label':'Cell Type and State','value':'Cell Type and State','disabled':False},
             {'label':'Slide Metadata','value':'Slide Metadata','disabled':False},
@@ -346,7 +346,7 @@ class LayoutHandler:
             dbc.CardBody([
                 dbc.Row([
                     dbc.Label('Select data for download',html_for = 'data-select'),
-                    dcc.Dropdown(data_options,placeholder = 'Select Data for Download',multi=True,id='data-select')
+                    dcc.Dropdown(self.data_options,placeholder = 'Select Data for Download',multi=True,id='data-select')
                 ]),
                 dbc.Row([dbc.Label('Download options',html_for = 'data-options')]),
                 dbc.Row([
@@ -988,6 +988,8 @@ class DownloadHandler:
     """
     def extract_ftu(self, slide, data):
     
+    """
+    """
 
     def extract_manual(self, slide, data):
     """

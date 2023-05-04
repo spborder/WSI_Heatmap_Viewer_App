@@ -351,8 +351,9 @@ class SlideHeatVis:
         )(self.update_selected_state_bar)
 
         self.app.callback(
-            Input('edit_control','geojson'),
-            Output('layer-control','children'),
+            Input({'type':'edit_control','index':ALL},'geojson'),
+            [Output('layer-control','children'),
+             Output('data-select','options')],
             prevent_initial_call=True
         )(self.add_manual_roi)
 
@@ -397,6 +398,14 @@ class SlideHeatVis:
         all_metadata_labels = []
         all_metadata = []
         slide_dataset_dict = []
+
+        # Checking if updating the included slides
+        if ctx.triggered_id == 'slide-dataset-table':
+            if len(slide_rows)>0:
+                current_slide_count, slide_select_options = self.update_current_slides(slide_rows)
+            else:
+                current_slide_count = [html.P()]
+                slide_select_options = [{'label':'blah','value':'blah'}]
 
         for d in selected_dataset_list:
 
@@ -1182,7 +1191,7 @@ class SlideHeatVis:
         self.current_overlays = new_children
 
         # Adding fresh edit-control to the outputs
-        new_edit_control = dl.EditControl(id='edit_control')
+        new_edit_control = dl.EditControl(id={'type':'edit_control','index':np.random.randint(0,1000)})
 
         return new_url, new_children, center_point, new_edit_control
 
@@ -1415,7 +1424,17 @@ class SlideHeatVis:
                         self.current_overlays.append(new_child)
                         print(f'Length of current_overlays: {len(self.current_overlays)}')
 
-                        return self.current_overlays
+                        # Updating data download options
+                        if len(self.wsi.manual_rois)>0:
+                            data_select_options = self.layout_handler.data_options
+                            data_select_options[4]['disabled'] = False
+                        else:
+                            data_select_options = self.layout_handler.data_options
+                        
+                        if len(self.wsi.marked_ftus)>0:
+                            data_select_options[3]['disabled'] = False
+
+                        return self.current_overlays, data_select_options
                     
                     elif new_geojson['features'][len(self.wsi.manual_rois)]['properties']['type']=='marker':
                         # Find the ftu that this marker is included in if there is one otherwise 
@@ -1430,7 +1449,18 @@ class SlideHeatVis:
                         if len(overlap_dict['polys'])>0:
                             self.wsi.marked_ftus.append(overlap_dict)
 
-                        raise exceptions.PreventUpdate
+                        # Updating data download options
+                        if len(self.wsi.manual_rois)>0:
+                            data_select_options = self.layout_handler.data_options
+                            data_select_options[4]['disabled'] = False
+                        else:
+                            data_select_options = self.layout_handler.data_options
+                        
+                        if len(self.wsi.marked_ftus)>0:
+                            data_select_options[3]['disabled'] = False
+
+
+                        return self.current_overlays, data_select_options
                 else:
                     raise exceptions.PreventUpdate
             else:
