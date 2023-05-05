@@ -66,7 +66,9 @@ class SlideHeatVis:
                 asct_b_table,
                 cluster_metadata,
                 slide_info_dict,
-                run_type = None):
+                run_type = None,
+                ga_tag = None
+                ):
                 
         # Saving all the layouts for this instance
         self.layout_handler = layout_handler
@@ -84,8 +86,13 @@ class SlideHeatVis:
         self.app.title = "FUSION"
         self.app.layout = self.layout_handler.current_initial_layout
         self.app._favicon = './assets/favicon.ico'
-
         self.app.validation_layout = html.Div(self.layout_handler.validation_layout)
+
+        # If provided with a Google Analytics tag
+        if not ga_tag is None:
+            print(ga_tag)
+            print(ga_tag is None)
+            self.app.index_string = ga_tag
 
         self.run_type = run_type
 
@@ -202,7 +209,6 @@ class SlideHeatVis:
             """
         )
 
-        
         # Adding callbacks to app
         self.vis_callbacks()
         self.all_layout_callbacks()
@@ -374,38 +380,46 @@ class SlideHeatVis:
     def builder_callbacks(self):
 
         self.app.callback(
-            [Input('dataset-table','selected_rows'),
-             Input({'type':'slide-dataset-table','index':ALL},'selected_rows')],
+            Input('dataset-table','selected_rows'),
             [Output('selected-dataset-slides','children'),
              Output('slide-metadata-plots','children'),
-             Output({'type':'current-slide-count','index':ALL},'children'),
              Output('slide-select','options')],
              prevent_initial_call=True
-        )(self.plot_dataset_metadata)
+        )(self.initialize_metadata_plots)
 
         self.app.callback(
-            [Input({'type':'meta-drop','index':MATCH},'value'),
-             Input({'type':'cell-meta-drop','index':MATCH},'value'),
-             Input({'type':'agg-meta-drop','index':MATCH},'value')],
-            [Output({'type':'meta-plot','index':MATCH},'figure'),
-             Output({'type':'cell-meta-drop','index':MATCH},'options'),
-             Output({'type':'cell-meta-drop','index':MATCH},'disabled')],
-            prevent_initial_call=True
+            [Input({'type':'meta-drop','index':ALL},'value'),
+             Input({'type':'cell-meta-drop','index':ALL},'value'),
+             Input({'type':'agg-meta-drop','index':ALL},'value'),
+             Input({'type':'slide-dataset-table','index':ALL},'selected_rows')],
+             [Output('slide-select','options'),
+             Output({'type':'meta-plot','index':ALL},'figure'),
+             Output({'type':'cell-meta-drop','index':ALL},'options'),
+             Output({'type':'cell-meta-drop','index':ALL},'disabled'),
+             Output({'type':'current-slide-count','index':ALL},'children')],
+             prevent_initial_call = True
         )(self.update_metadata_plot)
 
-    def plot_dataset_metadata(self,selected_dataset_list,slide_rows):
+    def welcome_callbacks(self):
+
+        self.app.callback(
+            Input({'type':'video-drop','index':ALL},'value'),
+            Output({'type':'video','index':ALL},'src'),
+            prevent_initial_call = True
+        )(self.get_video)
+
+    def get_video(self,tutorial_category):
+
+        print(f'tutorial_category: {tutorial_category}')
+
+        return './assets/test_video.webm'
+
+    def initialize_metadata_plots(self,selected_dataset_list):
+
         # Extracting metadata from selected datasets and plotting
         all_metadata_labels = []
         all_metadata = []
         slide_dataset_dict = []
-
-        # Checking if updating the included slides
-        if ctx.triggered_id == 'slide-dataset-table':
-            if len(slide_rows)>0:
-                current_slide_count, slide_select_options = self.update_current_slides(slide_rows)
-            else:
-                current_slide_count = [html.P()]
-                slide_select_options = [{'label':'blah','value':'blah'}]
 
         for d in selected_dataset_list:
 
@@ -429,6 +443,7 @@ class SlideHeatVis:
                         f['properties']['dataset'] = d_name
                         f['properties']['slide_name'] = s['name']
                         ftu_props.append(f['properties'])
+
                 all_metadata.extend(ftu_props)
 
             all_metadata_labels.extend(metadata_available)
@@ -502,28 +517,27 @@ class SlideHeatVis:
             drop_div = html.Div()
             plot_div = html.Div()
 
-        callback_outputs = callback_context.outputs_list
+        slide_rows = [list(range(len(slide_dataset_dict)))]
+        current_slide_count, slide_select_options = self.update_current_slides(slide_rows)
 
-        if ctx.triggered_id == 'dataset-table':
-            slide_rows = [list(range(len(slide_dataset_dict)))]
+        return drop_div, plot_div, slide_select_options
 
-        if len(slide_rows)>0:
-            current_slide_count, slide_select_options = self.update_current_slides(slide_rows)
-        else:
-            current_slide_count = [html.P()]
-            slide_select_options = [{'label':'blah','value':'blah'}]
-
-        if callback_outputs[2] == []:
-
-            return drop_div,plot_div,[],slide_select_options
-        else:
-
-            return drop_div,plot_div,current_slide_count,slide_select_options
-
-    def update_metadata_plot(self,new_meta,sub_meta,group_type):
+    def update_metadata_plot(self,new_meta,sub_meta,group_type,slide_rows):
         
         cell_types_turn_off = True
         cell_types_present = ['None']
+
+        current_slide_count, slide_select_options = self.update_current_slides(slide_rows)
+
+        if type(new_meta)==list:
+            new_meta = new_meta[0]
+
+        if type(sub_meta) == list:
+            sub_meta = sub_meta[0]
+        
+        if type(group_type)==list:
+            group_type = group_type[0]
+
         if not new_meta is None:
             if group_type == 'By Dataset':
                 group_bar = 'dataset'   
@@ -533,6 +547,11 @@ class SlideHeatVis:
                 group_bar = 'dataset'
 
             plot_data = self.selected_meta_df.dropna(subset=[new_meta]).convert_dtypes()
+
+            # Filtering out de-selected slides
+            present_slides = [s['Slide Names'] for s in self.current_slides]
+            included_slides = [t for t in present_slides if self.current_slides[present_slides.index(t)]['included']]
+            plot_data = plot_data[plot_data['slide_name'].isin(included_slides)]
 
             if plot_data[new_meta].dtypes == float:
                 # Making violin plots 
@@ -582,7 +601,6 @@ class SlideHeatVis:
                         fig = go.Figure()
 
             else:
-                
                 # Finding counts of each unique value present
                 groups_present = plot_data[group_bar].unique()
                 count_df = pd.DataFrame()
@@ -601,21 +619,25 @@ class SlideHeatVis:
 
                 fig = go.Figure(px.bar(count_df,x = group_bar, y = 'counts',color=new_meta))
 
-            return fig, cell_types_present, cell_types_turn_off
+            return [slide_select_options, [fig], [cell_types_present], [cell_types_turn_off], [current_slide_count]]
         else:
-            return go.Figure(), cell_types_present, cell_types_turn_off
+            return [slide_select_options, [go.Figure()], [cell_types_present], [cell_types_turn_off], [current_slide_count]]
 
     def update_current_slides(self,slide_rows):
 
+        #print(f'slide_rows update_current_slides: {slide_rows}')
         # Updating the current slides
-        slide_rows = slide_rows[0]
-        for s in range(0,len(self.current_slides)):
-            if s in slide_rows:
-                self.current_slides[s]['included'] = True
-            else:
-                self.current_slides[s]['included'] = False
-                
-        slide_options = [{'label':i['Slide Names'],'value':i['Slide Names']} for i in self.current_slides if i['included']]
+        if len(slide_rows)>0:
+            #slide_rows = slide_rows[0]
+            if type(slide_rows[0])==list:
+                slide_rows = slide_rows[0]
+            for s in range(0,len(self.current_slides)):
+                if s in slide_rows:
+                    self.current_slides[s]['included'] = True
+                else:
+                    self.current_slides[s]['included'] = False
+                    
+            slide_options = [{'label':i['Slide Names'],'value':i['Slide Names']} for i in self.current_slides if i['included']]
 
         if slide_options == []:
             slide_options = [{'label':'blah','value':'blah'}]
@@ -1364,7 +1386,13 @@ class SlideHeatVis:
         
         print(f'triggered_id for add_manual: {ctx.triggered_id}')
         print(f'triggered prop ids for add_manual: {ctx.triggered_prop_ids}')
-        if ctx.triggered_id == 'edit_control':
+        if type(ctx.triggered_id)==dict:
+            triggered_id = ctx.triggered_id['type']
+        else:
+            triggered_id = ctx.triggered_id
+        print(triggered_id)
+
+        if triggered_id == 'edit_control':
             print(f'manual_roi:{new_geojson}')
             if not new_geojson is None:
                 if len(new_geojson['features'])>0:

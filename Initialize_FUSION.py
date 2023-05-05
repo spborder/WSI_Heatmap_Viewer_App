@@ -543,9 +543,33 @@ class LayoutHandler:
         welcome_description = [
             html.P('Happy fusing!')
         ]
+
+        total_videos = ['Main Window Navigation','Cell Type Overlays','Morphological Clustering','Cell Type and State Proportions','Exporting Data']
+        videos_available = ['Main Window Navigation']
+        video_dropdown = []
+        for t in total_videos:
+            if t in videos_available:
+                video_dropdown.append({'label':t,'value':t,'disabled':False})
+            else:
+                video_dropdown.append({'label':t,'value':t,'disabled':True})
         
         welcome_layout = [
-                html.H1('Welcome to FUSION!')
+                html.H1('Welcome to FUSION!'),
+                html.Hr(),
+                html.B(),
+                dbc.Row([
+                    dbc.Row([dbc.Label('Getting Started: Select a category below to view a tutorial video')]),
+                    html.Hr(),
+                    html.B(),
+                    dcc.Dropdown(video_dropdown,video_dropdown[0],id={'type':'video-drop','index':0}),
+                    html.B(),
+                    html.Hr(),
+                    html.Video(src='./assets/test_video.webm',
+                            controls = True,
+                            autoPlay = True,
+                            preload=True,
+                            id = {'type':'video','index':0})
+                ])
             ]
         
         self.current_welcome_layout = welcome_layout
@@ -564,7 +588,7 @@ class LayoutHandler:
                     dbc.Col(html.Img(id='logo',src=('./assets/Lab_Logo_white.png'),height='75px'),md='auto'),
                     dbc.Col([
                         html.Div([
-                            html.H3('FUSION'),
+                            html.H3('FUSION',style={'color':'rgb(255,255,255)'}),
                             html.P('Functional Unit State Identification and Navigation with WSI')
                         ],id='app-title')
                     ],md=True,align='center')
@@ -579,7 +603,7 @@ class LayoutHandler:
                                         'User Survey',
                                         id = 'user-survey-button',
                                         outline = True,
-                                        color = 'primary',
+                                        color = 'secondary',
                                         href = ' https://ufl.qualtrics.com/jfe/form/SV_1A0CcKNLhTnFCHI',
                                         style = {'textTransform':'none'}
                                     )
@@ -589,7 +613,7 @@ class LayoutHandler:
                                         "Cell Cards",
                                         id='cell-cards-button',
                                         outline=True,
-                                        color="primary",
+                                        color="secondary",
                                         href="https://cellcards.org/index.php",
                                         style={"textTransform":"none"}
                                     )
@@ -599,7 +623,7 @@ class LayoutHandler:
                                         "Lab Website",
                                         id='lab-web-button',
                                         outline=True,
-                                        color='primary',
+                                        color='secondary',
                                         href='https://cmilab.nephrology.medicine.ufl.edu',
                                         style={"textTransform":"none"}
                                     )
@@ -613,8 +637,8 @@ class LayoutHandler:
                 align='center')
                 ], fluid=True),
             dark=True,
-            color="dark",
-            #sticky="top",
+            color="primary",
+            sticky='fixed',
             style={'marginBottom':'20px'}
         )
 
