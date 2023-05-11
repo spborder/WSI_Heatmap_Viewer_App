@@ -32,6 +32,9 @@ from skimage.transform import resize
 import geojson
 import random
 
+import mercantile
+import requests
+
 import plotly.express as px
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
@@ -625,8 +628,8 @@ class SlideHeatVis:
 
     def update_current_slides(self,slide_rows):
 
-        #print(f'slide_rows update_current_slides: {slide_rows}')
         # Updating the current slides
+        slide_options = []
         if len(slide_rows)>0:
             #slide_rows = slide_rows[0]
             if type(slide_rows[0])==list:
@@ -1278,23 +1281,59 @@ class SlideHeatVis:
             # openslide needs min_x, min_y, width, height
             min_x = int(s['Min_x_coord'])
             min_y = int(s['Min_y_coord'])
-            width = int(s['Max_x_coord'])-min_x
-            height = int(s['Max_y_coord'])-min_y
+            max_x = int(s['Max_x_coord'])
+            max_y = int(s['Max_y_coord'])
 
-            if 'slide_path' in self.slide_info_dict[s['image_id']+'.svs']:
-                slide_path = self.slide_info_dict[s['image_id']+'.svs']['slide_path']
+            # Normalize coordinates to be within slide bounds
+            # width, height
+            wsi_dims = self.slide_info_dict[s['image_id']+'.svs']['wsi_dims']
+            # min_long, min lat, max_long, max lat
+            slide_bounds = self.slide_info_dict[s['image_id']+'.svs']['bounds']
 
-                wsi = openslide.OpenSlide(slide_path)
-                slide_region = wsi.read_region((min_x,min_y),0,(width,height))
-                openslide.OpenSlide.close(wsi)
+            min_slide_x = slide_bounds[0]+(slide_bounds[2]-slide_bounds[0])*(min_x/wsi_dims[0])
+            min_slide_y = slide_bounds[1]+(slide_bounds[3]-slide_bounds[1])*(min_y/wsi_dims[1])
+            max_slide_x = slide_bounds[0]+(slide_bounds[2]-slide_bounds[0])*(max_x/wsi_dims[0])
+            max_slide_y = slide_bounds[1]+(slide_bounds[3]-slide_bounds[1])*(max_y/wsi_dims[1])
+            #test_merc = mercantile.bounding_tile(max_slide_x,min_slide_y,min_slide_x,max_slide_y)
+            test_merc = mercantile.tile((max_slide_x+min_slide_x)/2,(max_slide_y+min_slide_y)/2,17)
 
-                img_list.append(resize(np.uint8(np.array(slide_region))[:,:,0:3],output_shape=(256,256,3)))
+            # Use requests to pull out image data from URL
+            dataset_name = self.dataset_handler.get_slide_dataset(s['image_id']+'.svs')
+            dataset = self.dataset_handler.get_dataset(dataset_name)
+            
+            slide_key_name = self.slide_info_dict[s['image_id']+'.svs']['key_name']
+            merc_tiles = mercantile.neighbors(test_merc)
+            tile_mask = np.zeros((3*256,3*256,3))
+            for t in merc_tiles:
+                tile_x, tile_y, tile_z = t.x, t.y, t.z
+
+                url = f'http://192.168.86.39:5000/rgb/{dataset["key_name"]}/{slide_key_name}/{tile_z}/{tile_x}/{tile_y}.png?r=B04&r_range=[46,168]&g=B03&g_range=[46,168]&b=B02&b_range=[46,168]&'
+
+                response = requests.get(url,verify=False,timeout=10)
+                img = Image.open(BytesIO(response.content))
+
+                # It says that there's no guarantee of the order so have to figure something out for that
+                tile_x_diff = tile_x-test_merc.x
+                tile_y_diff = tile_y-test_merc.y
+                tile_mask[256*(1+tile_y_diff):256+256*(1+tile_y_diff),256*(1+tile_x_diff):256+256*(1+tile_x_diff),:] = np.uint8(np.array(img))
+            
+            # Now grabbing the middle image
+            url = f'http://192.168.86.39:5000/rgb/{dataset["key_name"]}/{slide_key_name}/{test_merc.z}/{test_merc.x}/{test_merc.y}.png?r=B04&r_range=[46,168]&g=B03&g_range=[46,168]&b=B02&b_range=[46,168]&'
+
+            response = requests.get(url,verify=False,timeout=10)
+            img = Image.open(BytesIO(response.content))
+            
+            tile_mask[256:512,256:512,:] += np.uint8(np.array(img))
+
+            tile_mask = resize(tile_mask,output_shape=(512,512,3))
+            img_list.append(tile_mask)
 
         return img_list        
 
     def update_selected(self,hover,selected):
 
         if hover is not None:
+            print(f'triggered_prop_ids: {ctx.triggered_prop_ids.keys()}')
             if 'cluster-graph.selectedData' in list(ctx.triggered_prop_ids.keys()):
                 sample_ids = [i['customdata'][0] for i in selected['points']]
                 sample_info = []
@@ -1316,11 +1355,18 @@ class SlideHeatVis:
             self.current_selected_samples = sample_info
 
             current_image = self.grab_image(sample_info)
+            print(f'length: {len(current_image)}')
             if len(current_image)==1:
                 selected_image = go.Figure(px.imshow(current_image[0]))
-            else:
+            elif len(current_image)>1:
                 selected_image = go.Figure(px.imshow(np.stack(current_image,axis=0),animation_frame=0,binary_string=True,labels=dict(animation_frame=self.current_ftu)))
-            
+            else:
+                print(f'No images found')
+                print(f'hover: {hover}')
+                print(f'selected:{selected}')
+                print(f'self.current_selected_samples: {self.current_selected_samples}')
+
+
             selected_image.update_layout(
                 margin=dict(l=0,r=0,t=0,b=0)
             )
@@ -1386,109 +1432,113 @@ class SlideHeatVis:
         
         print(f'triggered_id for add_manual: {ctx.triggered_id}')
         print(f'triggered prop ids for add_manual: {ctx.triggered_prop_ids}')
-        if type(ctx.triggered_id)==dict:
-            triggered_id = ctx.triggered_id['type']
-        else:
-            triggered_id = ctx.triggered_id
-        print(triggered_id)
+        print(f'type of ctx.triggered_id: {type(ctx.triggered_id)}')
+        triggered_id = ctx.triggered_id['type']
+
+        print(f'triggered_id: {triggered_id}')
 
         if triggered_id == 'edit_control':
             print(f'manual_roi:{new_geojson}')
             if not new_geojson is None:
-                if len(new_geojson['features'])>0:
-                    
-                    if not new_geojson['features'][len(self.wsi.manual_rois)]['properties']['type']=='marker':
-                        # Only getting the most recent to add
-                        new_geojson = {'type':'FeatureCollection','features':[new_geojson['features'][len(self.wsi.manual_rois)]]}
-                        print(f'new_geojson: {new_geojson}')
-
-                        # New geojson has no properties which can be used for overlays or anything so we have to add those
-                        # Step 1, find intersecting spots:
-                        overlap_dict = self.wsi.find_intersecting_spots(shape(new_geojson['features'][0]['geometry']))
-                        main_counts_data = pd.DataFrame(overlap_dict['main_counts']).sum(axis=0).to_frame()
-                        main_counts_data = (main_counts_data/main_counts_data.sum()).fillna(0.000).round(decimals=18)
-
-                        main_counts_data[0] = main_counts_data[0].map('{:.19f}'.format)
+                if type(new_geojson)==list:
+                    new_geojson = new_geojson[0]
+                if not new_geojson is None:
+                    if len(new_geojson['features'])>0:
                         
-                        main_counts_dict = main_counts_data.astype(float).to_dict()[0]
+                        if not new_geojson['features'][len(self.wsi.manual_rois)]['properties']['type']=='marker':
+                            # Only getting the most recent to add
+                            new_geojson = {'type':'FeatureCollection','features':[new_geojson['features'][len(self.wsi.manual_rois)]]}
+                            print(f'new_geojson: {new_geojson}')
 
-                        agg_cell_states = {}
-                        for m_c in list(main_counts_dict.keys()):
-                            cell_states = pd.DataFrame([i[m_c] for i in overlap_dict['states']]).sum(axis=0).to_frame()
-                            cell_states = (cell_states/cell_states.sum()).fillna(0.000).round(decimals=18)
+                            # New geojson has no properties which can be used for overlays or anything so we have to add those
+                            # Step 1, find intersecting spots:
+                            overlap_dict = self.wsi.find_intersecting_spots(shape(new_geojson['features'][0]['geometry']))
+                            main_counts_data = pd.DataFrame(overlap_dict['main_counts']).sum(axis=0).to_frame()
+                            main_counts_data = (main_counts_data/main_counts_data.sum()).fillna(0.000).round(decimals=18)
 
-                            cell_states[0] = cell_states[0].map('{:.19f}'.format)
+                            main_counts_data[0] = main_counts_data[0].map('{:.19f}'.format)
+                            
+                            main_counts_dict = main_counts_data.astype(float).to_dict()[0]
 
-                            agg_cell_states[m_c] = cell_states.astype(float).to_dict()[0]
+                            agg_cell_states = {}
+                            for m_c in list(main_counts_dict.keys()):
+                                cell_states = pd.DataFrame([i[m_c] for i in overlap_dict['states']]).sum(axis=0).to_frame()
+                                cell_states = (cell_states/cell_states.sum()).fillna(0.000).round(decimals=18)
+
+                                cell_states[0] = cell_states[0].map('{:.19f}'.format)
+
+                                agg_cell_states[m_c] = cell_states.astype(float).to_dict()[0]
+                            
+
+                            new_geojson['features'][0]['properties']['Main_Cell_Types'] = main_counts_dict
+                            new_geojson['features'][0]['properties']['Cell_States'] = agg_cell_states
+
+                            print(f'Length of wsi.manual_rois: {len(self.wsi.manual_rois)}')
+                            print(f'Length of current_overlays: {len(self.current_overlays)}')
+
+                            self.wsi.manual_rois.append(
+                                {
+                                    'geojson':new_geojson,
+                                    'id':{'type':'ftu-bounds','index':len(self.current_overlays)},
+                                    'hover_color':'#32a852'
+                                }
+                            )
+
+                            print(f'Length of wsi.manual_rois: {len(self.wsi.manual_rois)}')
+                            # Updating the hex color key with new values
+                            self.update_hex_color_key('cell_value')
+
+                            new_child = dl.Overlay(
+                                dl.LayerGroup(
+                                    dl.GeoJSON(data = new_geojson, id = {'type':'ftu-bounds','index':len(self.current_overlays)}, options = dict(style=self.ftu_style_handle),
+                                        hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = self.cell_vis_val),
+                                        hoverStyle = arrow_function(dict(weight=5, color = '#32a852',dashArray = ''))
+                                    )
+                                ), name = f'Manual ROI {len(self.wsi.manual_rois)}', checked = True, id = self.wsi.slide_info_dict['key_name']+f'_manual_roi{len(self.wsi.manual_rois)}'
+                            )
+
+                            self.current_overlays.append(new_child)
+                            print(f'Length of current_overlays: {len(self.current_overlays)}')
+
+                            # Updating data download options
+                            if len(self.wsi.manual_rois)>0:
+                                data_select_options = self.layout_handler.data_options
+                                data_select_options[4]['disabled'] = False
+                            else:
+                                data_select_options = self.layout_handler.data_options
+                            
+                            if len(self.wsi.marked_ftus)>0:
+                                data_select_options[3]['disabled'] = False
+
+                            return self.current_overlays, data_select_options
                         
+                        elif new_geojson['features'][len(self.wsi.manual_rois)]['properties']['type']=='marker':
+                            # Find the ftu that this marker is included in if there is one otherwise 
+                            new_geojson = {'type':'FeatureCollection','features':[new_geojson['features'][len(self.wsi.manual_rois)]]}
 
-                        new_geojson['features'][0]['properties']['Main_Cell_Types'] = main_counts_dict
-                        new_geojson['features'][0]['properties']['Cell_States'] = agg_cell_states
+                            # TODO: placeholder for adding the marked FTU to the slide's list of marked FTUs
+                            print(new_geojson['features'][len(self.wsi.manual_rois)])
 
-                        print(f'Length of wsi.manual_rois: {len(self.wsi.manual_rois)}')
-                        print(f'Length of current_overlays: {len(self.current_overlays)}')
+                            # Find the ftu that intersects with this marker
+                            overlap_dict = self.wsi.find_intersecting_ftu(shape(new_geojson['features'][0]['geometry']))
+                            print(f'Intersecting FTUs with marker: {overlap_dict}')
+                            if len(overlap_dict['polys'])>0:
+                                self.wsi.marked_ftus.append(overlap_dict)
 
-                        self.wsi.manual_rois.append(
-                            {
-                                'geojson':new_geojson,
-                                'id':{'type':'ftu-bounds','index':len(self.current_overlays)},
-                                'hover_color':'#32a852'
-                            }
-                        )
-
-                        print(f'Length of wsi.manual_rois: {len(self.wsi.manual_rois)}')
-                        # Updating the hex color key with new values
-                        self.update_hex_color_key('cell_value')
-
-                        new_child = dl.Overlay(
-                            dl.LayerGroup(
-                                dl.GeoJSON(data = new_geojson, id = {'type':'ftu-bounds','index':len(self.current_overlays)}, options = dict(style=self.ftu_style_handle),
-                                    hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = self.cell_vis_val),
-                                    hoverStyle = arrow_function(dict(weight=5, color = '#32a852',dashArray = ''))
-                                )
-                            ), name = f'Manual ROI {len(self.wsi.manual_rois)}', checked = True, id = self.wsi.slide_info_dict['key_name']+f'_manual_roi{len(self.wsi.manual_rois)}'
-                        )
-
-                        self.current_overlays.append(new_child)
-                        print(f'Length of current_overlays: {len(self.current_overlays)}')
-
-                        # Updating data download options
-                        if len(self.wsi.manual_rois)>0:
-                            data_select_options = self.layout_handler.data_options
-                            data_select_options[4]['disabled'] = False
-                        else:
-                            data_select_options = self.layout_handler.data_options
-                        
-                        if len(self.wsi.marked_ftus)>0:
-                            data_select_options[3]['disabled'] = False
-
-                        return self.current_overlays, data_select_options
-                    
-                    elif new_geojson['features'][len(self.wsi.manual_rois)]['properties']['type']=='marker':
-                        # Find the ftu that this marker is included in if there is one otherwise 
-                        new_geojson = {'type':'FeatureCollection','features':[new_geojson['features'][len(self.wsi.manual_rois)]]}
-
-                        # TODO: placeholder for adding the marked FTU to the slide's list of marked FTUs
-                        print(new_geojson['features'][len(self.wsi.manual_rois)])
-
-                        # Find the ftu that intersects with this marker
-                        overlap_dict = self.wsi.find_intersecting_ftu(shape(new_geojson['features'][0]['geometry']))
-                        print(f'Intersecting FTUs with marker: {overlap_dict}')
-                        if len(overlap_dict['polys'])>0:
-                            self.wsi.marked_ftus.append(overlap_dict)
-
-                        # Updating data download options
-                        if len(self.wsi.manual_rois)>0:
-                            data_select_options = self.layout_handler.data_options
-                            data_select_options[4]['disabled'] = False
-                        else:
-                            data_select_options = self.layout_handler.data_options
-                        
-                        if len(self.wsi.marked_ftus)>0:
-                            data_select_options[3]['disabled'] = False
+                            # Updating data download options
+                            if len(self.wsi.manual_rois)>0:
+                                data_select_options = self.layout_handler.data_options
+                                data_select_options[4]['disabled'] = False
+                            else:
+                                data_select_options = self.layout_handler.data_options
+                            
+                            if len(self.wsi.marked_ftus)>0:
+                                data_select_options[3]['disabled'] = False
 
 
-                        return self.current_overlays, data_select_options
+                            return self.current_overlays, data_select_options
+                    else:
+                        raise exceptions.PreventUpdate
                 else:
                     raise exceptions.PreventUpdate
             else:
@@ -1722,7 +1772,7 @@ def app(*args):
         dataset_reference_path = 'dataset_reference.json'
         dataset_handler = DatasetHandler(dataset_reference_path)
 
-        dataset_info_dict = dataset_handler.get_dataset('Indiana U. New Set')
+        dataset_info_dict = dataset_handler.get_dataset('Indiana U.')
 
         slide_names = []
         slide_info_dict = {}
@@ -1743,28 +1793,34 @@ def app(*args):
         metadata_paths = [base_dir+s.replace('.'+slide_extension,'_scaled.geojson') for s in slide_names]
 
     elif run_type == 'web' or run_type=='AWS':
-        # For test deployment
-        if run_type == 'web':
-            base_dir = os.getcwd()+'/mysite/'
-            slide_info_path = base_dir+'/slide_info/'
-        else:
-            base_dir = os.getcwd()
-            slide_info_path = base_dir+'assets/slide_info/'
 
-        available_slides = sorted(glob(slide_info_path+'*.svs'))
-        slide_names = [i.split('/')[-1] for i in available_slides]
+        base_dir = os.getcwd()
+        slide_info_path = base_dir+'assets/slide_info/'
+
+        # Loading initial dataset
+        dataset_reference_path = 'dataset_reference.json'
+        dataset_handler = DatasetHandler(dataset_reference_path)
+
+        dataset_info_dict = dataset_handler.get_dataset('Indiana U. New Set')
+
+        slide_names = []
+        slide_info_dict = {}
+        for slide in dataset_info_dict['slide_info']:
+            slide_info_dict[slide['name']] = slide
+            slide_names.append(slide['name'])
+
         slide_name = slide_names[0]
+        slide_extensino = slide_name.split('.')[-1]
+        dataset_key = dataset_info_dict['key_name']
 
-        print(f'Available slides: {available_slides}')
-        print(f'Slide names: {slide_names}')
+        slide_url = f'{os.environ.get("TILE_SERVER_HOST")}/rgb/{dataset_key}/{slide_info_dict[slide_name["key_name"]]}'+'/{z}/{x}/{y}.png?r=B04&r_range=[46,168]&g=B03&g_range=[46,168]&b=B02&b_range=[46,168]&'
+        ftu_path = base_dir+slide_name.replace('.'+slide_extension,'_scaled.geojson')
+        spot_path = base_dir+slide_name.replace('.'+slide_extension,'_Spots_scaled.geojson')
 
-        slide_url = f'{os.environ.get("TILE_SERVER_HOST")}/rgb/'+slide_info_dict[slide_name]['key_name']+'/{z}/{x}/{y}.png?r=B04&r_range=[46,168]&g=B03&g_range=[46,168]&b=B02&b_range=[46,168]&'
-        spot_path = slide_info_path+slide_name.replace('.svs','_Spots_scaled.geojson')
-        ftu_path = slide_info_path+slide_name.replace('.svs','_scaled.geojson')
         cell_graphics_path = base_dir+'graphic_reference.json'
         asct_b_path = base_dir+'Kidney_v1.2 - Kidney_v1.2.csv'
 
-        metadata_paths = [slide_info_path+s.replace('.svs','_scaled.geojson') for s in slide_names]
+        metadata_paths = [base_dir+s.replace('.'+slide_extension,'_scaled.geojson') for s in slide_names]
     
     # Adding slide paths to the slide_info_dict
 

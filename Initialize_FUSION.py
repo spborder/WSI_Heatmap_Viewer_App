@@ -125,7 +125,7 @@ class LayoutHandler:
                     dl.Map(center=center_point, zoom = 12, minZoom=11,
                            children = [
                                 dl.TileLayer(url = map_dict['url'],id = 'slide-tile'),
-                                dl.FeatureGroup(id='feature-group',children = [dl.EditControl(id='edit_control')]),
+                                dl.FeatureGroup(id='feature-group',children = [dl.EditControl(id={'type':'edit_control','index':0})]),
                                 dl.LayerGroup(id='mini-label'),
                                 html.Div(id='colorbar-div',children=[dl.Colorbar(id='map-colorbar')]),
                                 dl.LayersControl(id='layer-control',children = self.initial_overlays)
@@ -589,7 +589,7 @@ class LayoutHandler:
                     dbc.Col([
                         html.Div([
                             html.H3('FUSION',style={'color':'rgb(255,255,255)'}),
-                            html.P('Functional Unit State Identification and Navigation with WSI')
+                            html.P('Functional Unit State Identification and Navigation with WSI',style={'color':'rgb(255,255,255)'})
                         ],id='app-title')
                     ],md=True,align='center')
                 ],align='center'),
@@ -870,14 +870,15 @@ class DownloadHandler:
                 f_dict = {'type':'Feature','geometry':{'type':'Polygon','coordinates':[]}}
 
                 scaled_coords = np.squeeze(np.array(f['geometry']['coordinates']))
-                scaled_coords[:,0] *= height_scale
-                scaled_coords[:,1] *= width_scale
-                scaled_coords = scaled_coords.astype(int).tolist()
-                f_dict['geometry']['coordinates'] = scaled_coords
+                if len(np.shape(scaled_coords))==2:
+                    scaled_coords[:,0] *= height_scale
+                    scaled_coords[:,1] *= width_scale
+                    scaled_coords = scaled_coords.astype(int).tolist()
+                    f_dict['geometry']['coordinates'] = scaled_coords
 
-                f_dict['properties'] = {'label':f['properties']['label'], 'structure':f['properties']['structure']}
+                    f_dict['properties'] = {'label':f['properties']['label'], 'structure':f['properties']['structure']}
 
-                final_ann['features'].append(f_dict)
+                    final_ann['features'].append(f_dict)
 
         elif format == 'Aperio XML':
             
@@ -906,14 +907,15 @@ class DownloadHandler:
 
                     verts = ET.SubElement(region,'Vertices')
                     scaled_coords = np.squeeze(np.array(f['geometry']['coordinates']))
-                    scaled_coords[:,0] *= height_scale
-                    scaled_coords[:,1] *= width_scale
-                    scaled_coords = scaled_coords.astype(int).tolist()
+                    if len(np.shape(scaled_coords))==2:
+                        scaled_coords[:,0] *= height_scale
+                        scaled_coords[:,1] *= width_scale
+                        scaled_coords = scaled_coords.astype(int).tolist()
 
-                    for v in scaled_coords:
-                        ET.SubElement(verts,'Vertex',attrib={'X':str(v[1]),'Y':str(v[0]),'Z':'0'})
+                        for v in scaled_coords:
+                            ET.SubElement(verts,'Vertex',attrib={'X':str(v[1]),'Y':str(v[0]),'Z':'0'})
 
-                    ET.SubElement(verts,'Vertex',attrib={'X':str(scaled_coords[0][1]),'Y':str(scaled_coords[0][0]),'Z':'0'})
+                        ET.SubElement(verts,'Vertex',attrib={'X':str(scaled_coords[0][1]),'Y':str(scaled_coords[0][0]),'Z':'0'})
 
             final_ann = ET.tostring(final_ann,encoding='unicode',pretty_print=True)
 
@@ -931,21 +933,22 @@ class DownloadHandler:
 
                 for f in ftu_annotations:
                     scaled_coords = np.squeeze(np.array(f['geometry']['coordinates']))
-                    scaled_coords[:,0] *= height_scale
-                    scaled_coords[:,1] *= width_scale
-                    scaled_coords = scaled_coords.astype(int).tolist()
+                    if len(np.shape(scaled_coords))==2:
+                        scaled_coords[:,0] *= height_scale
+                        scaled_coords[:,1] *= width_scale
+                        scaled_coords = scaled_coords.astype(int).tolist()
 
-                    struct_id = uuid.uuid4().hex[:24]
-                    struct_dict = {
-                        'type':'polyline',
-                        'points':[i+[0] for i in scaled_coords],
-                        'id':struct_id,
-                        'closed':True,
-                        'user':{
-                            'label':f['properties']['label']
+                        struct_id = uuid.uuid4().hex[:24]
+                        struct_dict = {
+                            'type':'polyline',
+                            'points':[i+[0] for i in scaled_coords],
+                            'id':struct_id,
+                            'closed':True,
+                            'user':{
+                                'label':f['properties']['label']
+                            }
                         }
-                    }
-                    output_dict['elements'].append(struct_dict)
+                        output_dict['elements'].append(struct_dict)
 
             final_ann.append(output_dict)
 
