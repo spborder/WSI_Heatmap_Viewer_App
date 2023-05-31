@@ -216,6 +216,7 @@ class SlideHeatVis:
         self.vis_callbacks()
         self.all_layout_callbacks()
         self.builder_callbacks()
+        self.welcome_callbacks()
 
         # Comment out this line when running on the web
         if self.run_type == 'local':
@@ -412,10 +413,12 @@ class SlideHeatVis:
         )(self.get_video)
 
     def get_video(self,tutorial_category):
-
+        tutorial_category = tutorial_category[0]
         print(f'tutorial_category: {tutorial_category}')
 
-        return './assets/test_video.webm'
+        video_src = [f'./assets/videos/{tutorial_category}.mp4']
+
+        return video_src
 
     def initialize_metadata_plots(self,selected_dataset_list):
 

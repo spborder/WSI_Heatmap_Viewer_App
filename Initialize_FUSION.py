@@ -544,14 +544,16 @@ class LayoutHandler:
             html.P('Happy fusing!')
         ]
 
-        total_videos = ['Main Window Navigation','Cell Type Overlays','Morphological Clustering','Cell Type and State Proportions','Exporting Data']
-        videos_available = ['Main Window Navigation']
+        total_videos = ['Main Window Navigation','Dataset Builder','Cell Type Overlays','Morphological Clustering',
+                        'Cell Type and State Proportions','Exporting Data']
+        video_names = ['main_window','dataset_builder','cell_overlays','morphological_clustering','cell_types_and_states',[]]
+        videos_available = ['Main Window Navigation','Dataset Builder','Cell Type Overlays','Cell Type and State Proportions']
         video_dropdown = []
-        for t in total_videos:
+        for t,n in zip(total_videos,video_names):
             if t in videos_available:
-                video_dropdown.append({'label':t,'value':t,'disabled':False})
+                video_dropdown.append({'label':t,'value':n,'disabled':False})
             else:
-                video_dropdown.append({'label':t,'value':t,'disabled':True})
+                video_dropdown.append({'label':t,'value':n,'disabled':True})
         
         welcome_layout = [
                 html.H1('Welcome to FUSION!'),
@@ -564,7 +566,7 @@ class LayoutHandler:
                     dcc.Dropdown(video_dropdown,video_dropdown[0],id={'type':'video-drop','index':0}),
                     html.B(),
                     html.Hr(),
-                    html.Video(src='./assets/test_video.webm',
+                    html.Video(src='./assets/videos/main_window.mp4',
                             controls = True,
                             autoPlay = True,
                             preload=True,
@@ -585,7 +587,7 @@ class LayoutHandler:
         header = dbc.Navbar(
             dbc.Container([
                 dbc.Row([
-                    dbc.Col(html.Img(id='logo',src=('./assets/Lab_Logo_white.png'),height='75px'),md='auto'),
+                    dbc.Col(html.Img(id='logo',src=('./assets/FUSION-LAB_navigator.png'),height='100px'),md='auto'),
                     dbc.Col([
                         html.Div([
                             html.H3('FUSION',style={'color':'rgb(255,255,255)'}),
@@ -645,7 +647,7 @@ class LayoutHandler:
         # Sidebar
         sider = html.Div([
             dbc.Offcanvas([
-                html.Img(id='welcome-logo-side',src=('./assets/Lab_Logo.png'),height='280px',width='250px'),
+                html.Img(id='welcome-logo-side',src=('./assets/FUSION-LAB-FINAL.png'),height='315px',width='250px'),
                 dbc.Nav([
                     dbc.NavLink('Welcome',href='/welcome',active='exact'),
                     dbc.NavLink('FUSION Visualizer',href='/vis',active='exact'),
@@ -1052,46 +1054,6 @@ class CallbackManager:
             app.callback(
                 callback.outputs,callback.inputs,callback.states,**callback.kwargs
             )(callback.func)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
