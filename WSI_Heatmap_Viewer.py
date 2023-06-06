@@ -160,7 +160,7 @@ class SlideHeatVis:
         self.cell_vis_val = 0.5
         self.ftu_style_handle = assign("""function(feature,context){
             const {color_key,current_cell,fillOpacity,ftu_colors} = context.props.hideout;
-
+            
             if (current_cell==='cluster'){
                 if (current_cell in feature.properties){
                     var cell_value = feature.properties.Cluster;
@@ -202,10 +202,16 @@ class SlideHeatVis:
                 var cell_value = Number.Nan;
             }
 
-            const fillColor = color_key[cell_value];
             var style = {};
-            style.fillColor = fillColor;
-            style.fillOpacity = fillOpacity;
+            if (cell_value == cell_value) {
+                const fillColor = color_key[cell_value];
+
+                style.fillColor = fillColor;
+                style.fillOpacity = fillOpacity;
+
+            } else {
+                style.fillOpacity = 0.0;
+            }
 
             return style;
             }
@@ -789,7 +795,6 @@ class SlideHeatVis:
                     if 'Cluster' in g:
                         cluster_label = g['Cluster']
                         raw_values_list.extend([float(i) for i in cluster_label])
-            #print(np.unique(raw_values_list))
             
         else:
             # For specific morphometrics
@@ -799,9 +804,9 @@ class SlideHeatVis:
                         morpho_value = g[color_type]
                         raw_values_list.extend([float(i) for i in morpho_value if float(i)>0])
             
-            #print(np.unique(raw_values_list))
-
         raw_values_list = np.unique(raw_values_list)
+        #print(f'raw values list: {raw_values_list}')
+
         # Converting to RGB
         if max(raw_values_list)<=1:
             rgb_values = np.uint8(255*self.color_map(np.uint8(255*raw_values_list)))[:,0:3]
@@ -814,6 +819,7 @@ class SlideHeatVis:
             hex_list.append('#'+"%02x%02x%02x" % (rgb_values[row,0],rgb_values[row,1],rgb_values[row,2]))
 
         self.hex_color_key = {i:j for i,j in zip(raw_values_list,hex_list)}
+        #print(f'hex color key: {self.hex_color_key}')
 
     def update_cell(self,cell_val,vis_val):
         
@@ -840,7 +846,7 @@ class SlideHeatVis:
             
             else:
                 # Used for morphometrics values
-                self.current_cell = 'morpho'
+                self.current_cell = cell_val
                 self.update_hex_color_key(cell_val)
 
                 color_bar = dl.Colorbar(colorscale = list(self.hex_color_key.values()),width=600,height=10,position='bottomleft',id=f'colorbar{random.randint(0,100)}')
@@ -953,8 +959,12 @@ class SlideHeatVis:
 
                     if mini_specs == 'All Main Cell Types':
                         chart_dict_data = chart_dict_data['Main_Cell_Types']
-                    else:
+                    elif mini_specs == 'Cell States for Current Cell Type':
                         chart_dict_data = chart_dict_data['Cell_States'][self.current_cell]
+                    else:
+                        # For clusters and morphometrics just show main cell types
+                        cart_dict_data = chart_dict_data['Main_Cell_Types']
+                    
 
                     chart_labels = list(chart_dict_data.keys())
                     chart_data = [chart_dict_data[j] for j in chart_labels]
@@ -1160,6 +1170,8 @@ class SlideHeatVis:
             self.update_hex_color_key('max_cell')
         elif self.current_cell == 'cluster':
             self.update_hex_color_key('cluster')
+        else:
+            self.update_hex_color_key(self.current_cell)
 
         map_dict = {
             'url':self.wsi.image_url,
@@ -1173,6 +1185,9 @@ class SlideHeatVis:
                 for struct in list(self.wsi.ftus.keys())
             }
         }
+
+        self.current_ftus = list(self.wsi.ftus.keys())
+        self.current_ftu_layers = list(self.wsi.ftus.keys())
 
         spot_dict = {
             'geojson':self.wsi.geojson_spots,
@@ -1804,7 +1819,7 @@ def app(*args):
         dataset_reference_path = 'dataset_reference.json'
         dataset_handler = DatasetHandler(dataset_reference_path)
 
-        dataset_info_dict = dataset_handler.get_dataset('Indiana U. New Set')
+        dataset_info_dict = dataset_handler.get_dataset('Indiana U.')
 
         slide_names = []
         slide_info_dict = {}
@@ -1813,7 +1828,7 @@ def app(*args):
             slide_names.append(slide['name'])
 
         slide_name = slide_names[0]
-        slide_extensino = slide_name.split('.')[-1]
+        slide_extension = slide_name.split('.')[-1]
         dataset_key = dataset_info_dict['key_name']
 
         slide_url = f'{os.environ.get("TILE_SERVER_HOST")}/rgb/{dataset_key}/{slide_info_dict[slide_name["key_name"]]}'+'/{z}/{x}/{y}.png?r=B04&r_range=[46,168]&g=B03&g_range=[46,168]&b=B02&b_range=[46,168]&'
@@ -1851,7 +1866,7 @@ def app(*args):
 
     wsi = WholeSlide(slide_url,slide_name,slide_info_dict[slide_name],ftu_path,spot_path)
 
-    external_stylesheets = [dbc.themes.LUX]
+    external_stylesheets = [dbc.themes.LUX,dbc.icons.BOOTSTRAP]
 
     # Calculating center point for initial layout
     current_slide_bounds = slide_info_dict[slide_name]['bounds']

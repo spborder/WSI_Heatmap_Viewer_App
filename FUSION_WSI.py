@@ -287,22 +287,23 @@ class WholeSlide:
 
         for ann in ftu_list:
             
-            # Which groups of FTUs intersect with the query box_poly
-            group_intersect = [i for i in range(0,len(self.ftus[ann])) if self.ftus[ann][i]['box'].intersects(box_poly)]
+            if ann in self.ann_ids.keys():
+                # Which groups of FTUs intersect with the query box_poly
+                group_intersect = [i for i in range(0,len(self.ftus[ann])) if self.ftus[ann][i]['box'].intersects(box_poly)]
 
-            for g in group_intersect:
-                group_polygons = self.ftus[ann][g]['polygons']
-                group_barcodes = self.ftus[ann][g]['barcodes']
-                group_counts = self.ftus[ann][g]['main_counts']
-                group_states = self.ftus[ann][g]['cell_states']
+                for g in group_intersect:
+                    group_polygons = self.ftus[ann][g]['polygons']
+                    group_barcodes = self.ftus[ann][g]['barcodes']
+                    group_counts = self.ftus[ann][g]['main_counts']
+                    group_states = self.ftus[ann][g]['cell_states']
 
-                # Within group intersections
-                intersect_idxes = [i for i in range(0,len(group_polygons)) if box_poly.intersects(group_polygons[i])]
+                    # Within group intersections
+                    intersect_idxes = [i for i in range(0,len(group_polygons)) if box_poly.intersects(group_polygons[i])]
 
-                intersect_barcodes.extend([group_barcodes[i] for i in intersect_idxes])
-                intersect_ftus.extend([group_polygons[i] for i in intersect_idxes])
-                intersect_counts.extend([group_counts[i] for i in intersect_idxes])
-                intersect_states.extend([group_states[i] for i in intersect_idxes])
+                    intersect_barcodes.extend([group_barcodes[i] for i in intersect_idxes])
+                    intersect_ftus.extend([group_polygons[i] for i in intersect_idxes])
+                    intersect_counts.extend([group_counts[i] for i in intersect_idxes])
+                    intersect_states.extend([group_states[i] for i in intersect_idxes])
 
         return {'polys':intersect_ftus, 'barcodes':intersect_barcodes, 'main_counts':intersect_counts, 'states':intersect_states}
 

@@ -50,8 +50,29 @@ class LayoutHandler:
         self.layout_dict = {}
         self.description_dict = {}
 
+        self.info_button_idx = -1
+
         self.gen_welcome_layout()
         self.gen_uploader_layout()
+
+    def gen_info_button(self,text):
+        
+        self.info_button_idx+=1
+
+        info_button = html.Div([
+            html.I(
+            className='bi bi-info-circle-fill me-2',
+            id={'type':'info-button','index':self.info_button_idx}
+            ),
+            dbc.Popover(
+                text,
+                target = {'type':'info-button','index':self.info_button_idx},
+                body=True,
+                trigger='hover'
+            )
+        ])
+
+        return info_button
 
     def gen_vis_layout(self,cell_types, center_point, map_dict, spot_dict):
 
@@ -67,37 +88,6 @@ class LayoutHandler:
             html.Hr(),
             html.P('Happy fusing!')         
         ]
-
-        # Slide selection
-        """
-        slide_select = dbc.Card(
-            id = 'slide-select-card',
-            children = [
-                dbc.CardHeader("Select case from dropdown menu"),
-                dbc.CardBody([
-                    dbc.Row([
-                        dbc.Col(
-                            html.Div(
-                                id = "slide_select-label",
-                                children = [
-                                    html.P("Available cases: ")
-                                ]
-                            ),md=4
-                        ),
-                        dbc.Col(
-                            html.Div(
-                                dcc.Dropdown(
-                                    slides_available,
-                                    slides_available[0],
-                                    id = 'slide-select'
-                                )
-                            ), md=8
-                        )
-                    ])
-                ])
-            ],style={'marginBottom':'20px'}
-        )
-        """
 
         # View of WSI
 
@@ -119,13 +109,23 @@ class LayoutHandler:
         ]
 
         wsi_view = dbc.Card([
-            dbc.CardHeader('Whole Slide Image Viewer'),
+            dbc.CardHeader(
+                children = [
+                    'Whole Slide Image Viewer',
+                    self.gen_info_button('Use the mouse to pan and zoom around the slide!')
+            ]),
             dbc.Row([
                 html.Div(
                     dl.Map(center=center_point, zoom = 12, minZoom=11,
                            children = [
                                 dl.TileLayer(url = map_dict['url'],id = 'slide-tile'),
-                                dl.FeatureGroup(id='feature-group',children = [dl.EditControl(id={'type':'edit_control','index':0})]),
+                                dl.FeatureGroup(id='feature-group',
+                                                children = [
+                                                    dl.EditControl(id={'type':'edit_control','index':0},
+                                                                   draw=dict(line=False,circle=False,circlemarker=False)
+                                                                   )
+                                                            ]
+                                                ),
                                 dl.LayerGroup(id='mini-label'),
                                 html.Div(id='colorbar-div',children=[dl.Colorbar(id='map-colorbar')]),
                                 dl.LayersControl(id='layer-control',children = self.initial_overlays)
@@ -186,6 +186,7 @@ class LayoutHandler:
                 dbc.Row([
                     dbc.Col([
                         dbc.Label("Cell Graphic", html_for="cell-graphic"),
+                        self.gen_info_button('Graphic depiction of selected cell'),
                         html.Img(
                             id = 'cell-graphic',
                             src = './assets/cell_graphics/default_cell_graphic.png',
@@ -195,6 +196,7 @@ class LayoutHandler:
                     
                     dbc.Col([
                         dbc.Label("Cell Hierarchy",html_for="cell-hierarchy"),
+                        self.gen_info_button('Pan and click nodes with the mouse for more information!'),
                         cyto.Cytoscape(
                             id = 'cell-hierarchy',
                             layout={'name':'preset'},
@@ -234,10 +236,23 @@ class LayoutHandler:
                     dbc.Card(
                         id= 'plot-options',
                         children = [
-                            dbc.CardHeader('Plot Options'),
+                            dbc.CardHeader(
+                                children = [
+                                    dbc.Row([
+                                        dbc.Col('Plot Options',md=11),
+                                        dbc.Col(self.gen_info_button('Select different plot options to update the graph!'),md=1)
+                                    ])
+
+                                    ]
+                                ),
                             dbc.CardBody([
                                 dbc.Row([
-                                    dbc.Col(dbc.Label('Functional Tissue Unit Type',html_for='ftu-select'),md=4),
+                                    dbc.Col([
+                                        dbc.Row([
+                                            dbc.Col(dbc.Label('Functional Tissue Unit Type',html_for='ftu-select'),md=11),
+                                            dbc.Col(self.gen_info_button("Select a FTU to see that FTU;s morphometrics clustering"),md=1)
+                                        ])
+                                    ],md=4),
                                     dbc.Col([
                                         html.Div(
                                             dcc.Dropdown(
@@ -250,7 +265,12 @@ class LayoutHandler:
                                 ]),
                                 html.B(),
                                 dbc.Row([
-                                    dbc.Col(dbc.Label('Type of plot',html_for='plot-select'),md=4),
+                                    dbc.Col([
+                                        dbc.Row([
+                                            dbc.Col(dbc.Label('Type of plot',html_for='plot-select'),md=11),
+                                            dbc.Col(self.gen_info_button('Select a method of dimensional reduction to change layout of clustering graph'),md=1)
+                                            ])                              
+                                        ],md=4),
                                     dbc.Col([
                                         html.Div(
                                             dcc.Dropdown(
@@ -263,7 +283,12 @@ class LayoutHandler:
                                 ]),
                                 html.B(),
                                 dbc.Row([
-                                    dbc.Col(dbc.Label('Sample Labels',html_for='label-select'),md=4),
+                                    dbc.Col([
+                                        dbc.Row([
+                                            dbc.Col(dbc.Label('Sample Labels',html_for='label-select'),md=11),
+                                            dbc.Col(self.gen_info_button('Select a label to overlay onto points in the graph'),md=1)
+                                            ])
+                                        ],md=4),
                                     dbc.Col([
                                         html.Div(
                                             dcc.Dropdown(
@@ -281,6 +306,7 @@ class LayoutHandler:
             ]),
             dbc.Row([
                 dbc.Col([
+                    self.gen_info_button('Click on a point in the graph or select a group of points with the lasso select tool to view the FTU and cell type data at that point'),
                     html.Div(
                         dcc.Graph(id='cluster-graph',figure=go.Figure())
                     )
@@ -294,7 +320,8 @@ class LayoutHandler:
                                     dcc.Loading(
                                         id = 'loading-image',
                                         children = [
-                                            dcc.Graph(id='selected-image',figure=go.Figure())
+                                            dcc.Graph(id='selected-image',figure=go.Figure()),
+                                            self.gen_info_button('Image(s) extracted from clustering plot')
                                         ]
                                     )
                                 ]
@@ -308,7 +335,10 @@ class LayoutHandler:
                                         children = [
                                             dbc.Row(
                                                 children = [
-                                                    dbc.Col(dcc.Graph(id='selected-cell-types',figure=go.Figure())),
+                                                    dbc.Col([
+                                                        dcc.Graph(id='selected-cell-types',figure=go.Figure()),
+                                                        self.gen_info_button('Click on a section of the pie chart to view cell state proportions')
+                                                        ]),
                                                     dbc.Col(dcc.Graph(id='selected-cell-states',figure=go.Figure()))
                                                 ]
                                             )
@@ -326,7 +356,8 @@ class LayoutHandler:
         cell_types+=['Max Cell Type','Morphometrics Clusters','Area','Mesangial Area','Mesangial Fraction','Arterial Area','Luminal Fraction','Average TBM Thickness','Average Cell Thickness']
         
         # Converting the cell_types list into a dictionary to disable some
-        disable_list = ['Morphometrics Clusters','Area','Mesangial Area','Mesangial Fraction','Arterial Area','Luminal Fraction','Average TBM Thickness','Average Cell Thickness']
+        #disable_list = ['Morphometrics Clusters','Area','Mesangial Area','Mesangial Fraction','Arterial Area','Luminal Fraction','Average TBM Thickness','Average Cell Thickness']
+        disable_list = []
         cell_types_list = []
         for c in cell_types:
             if c not in disable_list:
@@ -366,6 +397,7 @@ class LayoutHandler:
                         dbc.Row([
                             dbc.Col([
                                 html.H6("Select Cell for Overlaid Heatmap Viewing",className="cell-select"),
+                                self.gen_info_button('Select a cell type or metadata property to change FTU overlay colors'),
                                 html.Div(
                                     id = 'cell-select-div',
                                     children=[
@@ -375,6 +407,7 @@ class LayoutHandler:
                             ],md=6),
                             dbc.Col([
                                 html.H6("Options for Overlaid Minicharts",className='mini-select'),
+                                self.gen_info_button('Select an option to change what information is presented in overlaid pie charts'),
                                 html.Div(
                                     id='mini-select-div',
                                     children=[
@@ -391,6 +424,7 @@ class LayoutHandler:
                                         "Adjust Transparency of Heatmap",
                                         html_for="vis-slider"
                                     ),
+                                    self.gen_info_button('Change transparency of overlaid FTU colors between 0(fully see-through) to 100 (fully opaque)'),
                                     dcc.Slider(
                                         id='vis-slider',
                                         min=0,
@@ -439,6 +473,10 @@ class LayoutHandler:
 
         # Description and instructions card
         builder_description = [
+            html.P('Use this page to construct a dataset of slides for a visualization session'),
+            html.Hr(),
+            html.P('Use the sidebar to return to the visualization page'),
+            html.Hr(),
             html.P('Happy fusing!')
         ]
 
@@ -497,17 +535,19 @@ class LayoutHandler:
                 tooltip_duration = None
             )
         ])
-
         
         builder_layout = [
                     html.H3('Select a Dataset to add slides to current session'),
                     html.Hr(),
+                    self.gen_info_button('Click on one of the circles in the far left of the table to load metadata for that dataset. You can also filter/sort the rows using the arrow icons in the column names and the text input in the first row'),
                     table_layout,
                     html.H3('Select Slides to include in current session'),
+                    self.gen_info_button('Select/de-select slides to add/remove them from the metadata plot and current viewing session'),
                     html.Hr(),
-                    dcc.Loading(html.Div(id='selected-dataset-slides')),
+                    html.Div(id='selected-dataset-slides'),
                     html.Hr(),
                     html.H3('Current Metadata'),
+                    self.gen_info_button('Select different metadata options to view the distribution of FTU values within each selected dataset or slide'),
                     dcc.Loading(html.Div(id='slide-metadata-plots'))
                 ]
 
@@ -541,13 +581,17 @@ class LayoutHandler:
 
         # Description and instructions card
         welcome_description = [
+            html.P('This page contains video examples for a variety of things you can do using FUSION'),
+            html.Hr(),
+            html.P('Select an item from the dropdown menu to watch the video'),
+            html.Hr(),
             html.P('Happy fusing!')
         ]
 
-        total_videos = ['Main Window Navigation','Dataset Builder','Cell Type Overlays','Morphological Clustering',
+        total_videos = ['General Introduction','Main Window Navigation','Dataset Builder','Cell Type Overlays','Morphological Clustering',
                         'Cell Type and State Proportions','Exporting Data']
-        video_names = ['main_window','dataset_builder','cell_overlays','morphological_clustering','cell_types_and_states',[]]
-        videos_available = ['Main Window Navigation','Dataset Builder','Cell Type Overlays','Cell Type and State Proportions']
+        video_names = ['general_introduction','main_window','dataset_builder','cell_overlays','morphological_clustering','cell_types_and_states',[]]
+        videos_available = ['General Introduction','Main Window Navigation','Dataset Builder','Cell Type Overlays','Morphological Clustering','Cell Type and State Proportions']
         video_dropdown = []
         for t,n in zip(total_videos,video_names):
             if t in videos_available:
@@ -566,7 +610,7 @@ class LayoutHandler:
                     dcc.Dropdown(video_dropdown,video_dropdown[0],id={'type':'video-drop','index':0}),
                     html.B(),
                     html.Hr(),
-                    html.Video(src='./assets/videos/main_window.mp4',
+                    html.Video(src='./assets/videos/general_introduction.mp4',
                             controls = True,
                             autoPlay = True,
                             preload=True,
@@ -659,6 +703,10 @@ class LayoutHandler:
         
         # Description and instructions card
         initial_description = [
+            html.P('This page contains video examples for a variety of things you can do using FUSION'),
+            html.Hr(),
+            html.P('Select an item from the dropdown menu to watch the video'),
+            html.Hr(),
             html.P('Happy fusing!')
         ]
 
@@ -706,9 +754,12 @@ class LayoutHandler:
                                     slide_names[0],
                                     id = 'slide-select'
                                 )
-                            ), md=8
+                            ), md=7
+                        ),
+                        dbc.Col(
+                            self.gen_info_button('Click the dropdown menu to select a slide!'),md=1
                         )
-                    ])
+                    ],align='center')
                 ])
             ],style={'marginBottom':'20px','display':'none'}
         )
