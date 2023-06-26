@@ -39,6 +39,8 @@ from typing import Callable, List, Union
 from dash.dependencies import handle_callback_args
 from dash.dependencies import Input, Output, State
 
+import girder_client
+
 
 class LayoutHandler:
     def __init__(self,
@@ -824,6 +826,142 @@ class DatasetHandler:
         else:
             raise ValueError
 
+
+class GirderHandler:
+    def __init__(self,
+                apiUrl: str):
+        
+        self.apiUrl = apiUrl
+        self.gc = girder_client.GirderClient(apiUrl = self.apiUrl)
+    
+    def authenticate(self, username, password):
+        # Getting authentication for user
+        #TODO: Add some handling here for incorrect username or password
+        self.gc.authenticate(username,password)
+
+    def get_token(self):
+        # Getting session token for accessing private collections
+        user_token = self.gc.get('token/session')['token']
+
+        return user_token
+
+    def get_resource_id(self,resource):
+        # Get unique item id from resource path to file
+        item_id = self.gc.get('resource/lookup',parameters={'path':resource})['_id']
+
+        return item_id
+    
+    def get_tile_metadata(self,item_id):
+        # tile metadata includes: 'levels', 'magnification', 'mm_x', 'mm_y', 'sizeX', 'sizeY', 'tileHeight', 'tileWidth'
+        tile_metadata = self.gc(f'item/{item_id}/tiles')
+
+        return tile_metadata
+    
+    def get_annotations(self,item_id):
+        # Getting histomics JSON annotations for an item
+        annotations = self.gc.get(f'annotation/item/{item_id}')
+
+        return annotations
+    
+    def convert_json(self,annotations,image_dims,base_dims,target_crs):
+
+        # Top left and bottom right should be in (x,y) or (lng,lat) format
+        top_left = target_crs[0]
+        bottom_right = target_crs[1]
+
+        # Translation step
+        base_x_scale = base_dims[0]/(bottom_right[0]-top_left[0])
+        base_y_scale = base_dims[1]/(bottom_right[1]-top_left[1])
+
+        # image bounds [maxX, maxY]
+        # bottom_right[0]-top_left[0] --> range of x values in target crs
+        # bottom_right[1]-top_left[1] --> range of y values in target crs
+        # scaling values so they fall into the current map (pixels)
+        x_scale = (bottom_right[0]-top_left[0])/(image_dims[0])
+        y_scale = (bottom_right[1]-top_left[1])/(image_dims[1])
+        y_scale*=-1
+        # y_scale has to be inverted because y is measured upward in these maps
+
+        final_ann = {'type':'FeatureCollection','features':[]}
+        for a in annotations:
+            if 'elements' in a['annotation']:
+                for f in a['annotation']['elements']:
+                    f_dict = {'type':'Feature','geometry':{'type':'Polygon','coordinates':[]}}
+                    og_coords = np.squeeze(np.array(f['points']))
+                    if len(np.shape(og_coords))==2:
+                        scaled_coords = og_coords.tolist()
+                        scaled_coords = [i[0:-1] for i in scaled_coords]
+                        scaled_coords = [[base_x_scale*((i[0]*x_scale)),base_y_scale*((i[1]*y_scale))] for i in scaled_coords]
+                        f_dict['geometry']['coordinates'] = [scaled_coords]
+
+                        # If any user-provided metadata is provided per element add it to "properties" key
+                        if 'user' in f:
+                            f_dict['properties'] = f['user']
+
+                        final_ann['features'].append(f_dict)
+
+        return final_ann
+
+    def get_resource_map_data(self,resource):
+        # Getting all of the necessary materials for loading a new slide
+
+        # Step 1: get resource item id
+        item_id = self.get_resource_id(resource)
+
+        # Step 2: get resource tile metadata
+        tile_metadata = self.get_tile_metadata(item_id)
+
+        # Step 3: get tile, base, zoom, etc.
+        # Number of zoom levels for an image
+        zoom_levels = tile_metadata['levels']
+        # smallest level dimensions used to generate initial tiles
+        base_dims = [
+            tile_metadata['sizeX']/(2**(zoom_levels-1)),
+            tile_metadata['sizeY']/(2**(zoom_levels-1))
+        ]
+        # Getting the tile dimensions (used for all tiles)
+        tile_dims = [
+            tile_metadata['tileWidth'],
+            tile_metadata['tileHeight']
+        ]
+        # Original image dimensions used for scaling annotations
+        image_dims = [
+            tile_metadata['sizeX'],
+            tile_metadata['sizeY']
+        ]
+
+        # Step 4: Defining bounds of map
+        map_bounds = [[0,0],tile_dims]
+
+        # Step 5: Getting annotations for a resource
+        annotations = self.get_annotations(item_id)
+
+        # Step 6: Converting Histomics/large-image annotations to GeoJSON
+        geojson_annotations = self.convert_json(annotations,image_dims,base_dims,map_bounds)
+
+        # Step 7: Getting user token and tile url
+        user_token = self.get_token()
+        tile_url = self.gc.urlBase+f'item/{item_id}'+'/tiles/zxy/{z}/{x}/{y}?token='+user_token
+
+        return map_bounds, geojson_annotations, tile_url
+
+    def get_cli_list(self):
+        # Get a list of possible CLIs available for current user
+        #TODO: Find out the format of what is returned from this and reorder
+
+        cli = self.gc.get('/slicer_cli_web/cli')
+        return cli
+
+    """
+    def get_cli_input_list(self,cli_id):
+        #TODO: figure out how to extract list of expected inputs & types for a given CLI from XML
+    
+    """
+    """
+    def post_cli(self,cli_id,inputs):
+        #TODO: figure out how to post a specific CLI with expected inputs, keeping track of job status, and returning outputs to FUSION
+        
+    """
 
 class DownloadHandler:
     def __init__(self,
