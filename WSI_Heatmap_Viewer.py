@@ -55,7 +55,7 @@ from timeit import default_timer as timer
 #import diskcache
 
 from FUSION_WSI import WholeSlide
-from Initialize_FUSION import DatasetHandler, LayoutHandler, DownloadHandler
+from Initialize_FUSION import DatasetHandler, LayoutHandler, DownloadHandler, GirderHandler
 
 
 class SlideHeatVis:
@@ -1781,7 +1781,6 @@ def app(*args):
     except:
         print(f'Using {run_type} run type')
 
-
     if run_type == 'local':
         # For local testing
         base_dir = '/mnt/c/Users/Sam/Desktop/HIVE/SpotNet_NonEssential_Files/WSI_Heatmap_Viewer_App/assets/slide_info/'
@@ -1839,7 +1838,27 @@ def app(*args):
         asct_b_path = base_dir+'Kidney_v1.2 - Kidney_v1.2.csv'
 
         metadata_paths = [base_dir+s.replace('.'+slide_extension,'_scaled.geojson') for s in slide_names]
-    
+
+    elif run_type == 'dsa':
+        
+        # Using DSA as base directory for storage and accessing files
+        dsa_url = 'http://ec2-3-230-122-132.compute-1.amazonaws.com:8080/api/v1/'
+
+        # Different kind of dataset handler
+        dataset_handler = GirderHandler(apiUrl=dsa_url)
+
+        # Using environment variables for login TODO: Add login to main page
+        try:
+            username = os.environ.get('DSA_USER')
+            p_word = os.environ.get('DSA_PWORD')
+            dataset_handler.authenticate(username,p_word)
+        except:
+            print('Get a load of this guy, no login!')
+
+        # Initial collection TODO: get some default image as a placeholder in the visualization
+        
+
+
     # Adding slide paths to the slide_info_dict
 
     # Reading dictionary containing paths for specific cell types

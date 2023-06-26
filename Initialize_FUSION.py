@@ -845,6 +845,15 @@ class GirderHandler:
 
         return user_token
 
+    def get_collections(self):
+        # Getting collections data 
+        # This will be a list of dictionaries with the following keys:
+        # _accessLevel, _id, _modelType, created, description, meta, name, public, size, updated
+        # of which _id, description, meta, name, and public are probably the most useful
+        collections_data = self.gc.get('/collection')
+
+        return collections_data
+
     def get_resource_id(self,resource):
         # Get unique item id from resource path to file
         item_id = self.gc.get('resource/lookup',parameters={'path':resource})['_id']
@@ -960,7 +969,7 @@ class GirderHandler:
     """
     def post_cli(self,cli_id,inputs):
         #TODO: figure out how to post a specific CLI with expected inputs, keeping track of job status, and returning outputs to FUSION
-        
+
     """
 
 class DownloadHandler:
