@@ -102,15 +102,17 @@ class SlideHeatVis:
         # clustering related properties (and also cell types, cell states, image_ids, etc.)
         self.metadata = cluster_metadata
 
-        self.slide_info_dict = slide_info_dict
-        self.current_slides = [
-            {
-            'Slide Names': i,
-             'Dataset':self.dataset_handler.get_slide_dataset(i),
-             'included':True
-             }
-             for i in list(self.slide_info_dict.keys())
-        ]
+        # Only use this slide_info_dict for non-dsa backend deployments
+        if not self.run_type == 'dsa': 
+            self.slide_info_dict = slide_info_dict
+            self.current_slides = [
+                {
+                'Slide Names': i,
+                'Dataset':self.dataset_handler.get_slide_dataset(i),
+                'included':True
+                }
+                for i in list(self.slide_info_dict.keys())
+            ]
         self.wsi = wsi
 
         self.cell_graphics_key = json.load(open(cell_graphics_key))
@@ -422,7 +424,9 @@ class SlideHeatVis:
         tutorial_category = tutorial_category[0]
         print(f'tutorial_category: {tutorial_category}')
 
-        video_src = [f'./assets/videos/{tutorial_category}.mp4']
+        # Pull tutorial videos from DSA 
+        if not self.run_type == 'dsa':
+            video_src = [f'./assets/videos/{tutorial_category}.mp4']
 
         return video_src
 
@@ -435,12 +439,18 @@ class SlideHeatVis:
 
         for d in selected_dataset_list:
 
-            d_name = self.dataset_handler.dataset_names[d]
-            metadata_available = self.dataset_handler.get_dataset(d_name)['metadata']
-            slides_list = self.dataset_handler.get_dataset(d_name)['slide_info']
+            # Pulling dataset metadata for non-DSA backend deployment
+            if not self.run_type =='dsa':
+                d_name = self.dataset_handler.dataset_names[d]
+                metadata_available = self.dataset_handler.get_dataset(d_name)['metadata']
+                slides_list = self.dataset_handler.get_dataset(d_name)['slide_info']
+            else:
+                # Dataset name in this case is associated with a folder or collection
+
 
             for s in slides_list:
-
+                
+                #
                 self.slide_info_dict[s['name']] = s
                 
                 ftu_props = []
@@ -1857,15 +1867,20 @@ def app(*args):
 
         # Initial collection TODO: get some default image as a placeholder in the visualization
         initial_collection = '/collection/10X_Visium'
-        setattr(dataset_handler,'current_collection_path',initial_collection)
+        #setattr(dataset_handler,'current_collection_path',initial_collection)
         print(f'initial collection: {initial_collection}')
         initial_collection_id = dataset_handler.gc.get('resource/lookup',parameters={'path':initial_collection})
-        setattr(dataset_handler,'current_collection_id',initial_collection_id)
+        #setattr(dataset_handler,'current_collection_id',initial_collection_id)
+        
+        # Saving & organizing relevant id's in GirderHandler
+        dataset_handler.initialize_folder_structure(initial_collection)
+
         print(f'found initial collection: {initial_collection_id}')
         # Contents of folder
         initial_collection_contents = dataset_handler.gc.get(f'resource/{initial_collection_id["_id"]}/items',parameters={'type':'collection'})
         #print(f'contents: {initial_collection_contents}')
         initial_collection_contents = [i for i in initial_collection_contents if 'largeImage' in i]
+
 
     if not run_type=='dsa':
         # Reading dictionary containing paths for specific cell types

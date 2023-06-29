@@ -516,8 +516,10 @@ class LayoutHandler:
             # Ordering by folderId
             folderIds = [i['folderId'] for i in current_items]
             for f in np.unique(folderIds):
+                # Name of folder
                 folder_name = dataset_handler.gc.get(f'/folder/{f}')['name']
                 print(folder_name)
+                # List of metadata dictionaries for each item in a folder
                 folder_data = [i['meta'] for i in current_items if i['folderId']==f]
                 meta_keys = []
                 for i in folder_data:
@@ -1016,6 +1018,45 @@ class GirderHandler:
 
         cli = self.gc.get('/slicer_cli_web/cli')
         return cli
+
+    def initialize_folder_structure(self,path):
+
+        self.current_collection_path = path
+        self.current_collection_id = self.gc.get('resource/lookup',parameters={'path':self.current_collection_path})['_id']
+
+        # Getting contents of base collection
+        collection_contents = self.gc.get(f'resource/{self.current_collection_id}/items',parameters={'type':'collection'})
+        # Reducing list to only images
+        collection_slides = [i for i in collection_contents if 'largeImage' in i]
+        # folderIds for each item (determining ordering of slides)
+        slide_folderIds = [i['folderId'] for i in collection_slides]
+        # Assigning each slide to a dictionary by shared folderId
+        self.slide_datasets = {}
+        for f in np.unique(slide_folderIds):
+            self.slide_datasets[f] = {}
+        
+            folder_slides = [i for i in collection_slides if i['folderId']==f]
+
+            # The item dictionaries for each of the slides will also include metadata, id, etc.
+            self.slide_datasets[f]['Slides'] = folder_slides
+
+            # Aggregating non-dictionary metadata
+            folder_slide_meta = [i['meta'] for i in folder_slides]
+            # Get all the unique keys present in this folder's metadata
+            meta_keys = []
+            for i in folder_slide_meta:
+                meta_keys.extend(list(i.keys()))
+
+            # Not adding dictionaries to the folder metadata
+            # Assuming the same type is shared for each item sharing a key 
+            #TODO: Include check for types of each member of an item metadata just for safety
+            self.slide_datasets[f]['Metadata'] = {}
+            for m in meta_keys:
+                item_metadata = [item[m] for item in folder_slide_meta if m in item]
+                if type(item_metadata[0])==str:
+                    self.slide_datasets[f]['Metadata'][m] = ','.join(list(set(item_metadata)))
+                elif type(item_metadata[0])==int or type(item_metadata[0])==float:
+                    self.slide_datasets[f]['Metadata'][m] = sum(item_metadata)
 
     """
     def get_cli_input_list(self,cli_id):
