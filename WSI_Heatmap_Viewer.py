@@ -446,29 +446,40 @@ class SlideHeatVis:
                 slides_list = self.dataset_handler.get_dataset(d_name)['slide_info']
             else:
                 # Dataset name in this case is associated with a folder or collection
+                dataset_ids = list(self.dataset_handler.slide_datasets.keys())
+                d_name = [self.dataset_handler.slide_datasets[i]['name'] for i in dataset_ids][d]
+                d_id = dataset_ids[d]
+                metadata_available = self.dataset_handler.slide_datasets[d_id]['Metadata']
+                # This will store metadata, id, name, etc. for every slide in that dataset
+                slides_list = [i for i in self.dataset_handler.slide_datasets[d_id]['Slides']]
+                slide_dataset_dict.extend([{'Slide Names':s['name'],'Dataset':d_name} for s in slides_list])
 
+            if not self.run_type =='dsa':
+                for s in slides_list:
+                    
+                    self.slide_info_dict[s['name']] = s
+                    
+                    ftu_props = []
+                    if 'geojson' in s['metadata_path']:
 
-            for s in slides_list:
-                
-                #
-                self.slide_info_dict[s['name']] = s
-                
-                ftu_props = []
-                if 'geojson' in s['metadata_path']:
+                        slide_dataset_dict.append({'Slide Names':s['name'],'Dataset':d_name})
 
-                    slide_dataset_dict.append({'Slide Names':s['name'],'Dataset':d_name})
+                        with open(s['metadata_path']) as f:
+                            meta_json = geojson.load(f)
 
-                    with open(s['metadata_path']) as f:
-                        meta_json = geojson.load(f)
+                        for f in meta_json['features']:
+                            f['properties']['dataset'] = d_name
+                            f['properties']['slide_name'] = s['name']
+                            ftu_props.append(f['properties'])
 
-                    for f in meta_json['features']:
-                        f['properties']['dataset'] = d_name
-                        f['properties']['slide_name'] = s['name']
-                        ftu_props.append(f['properties'])
+                    all_metadata.extend(ftu_props)
 
-                all_metadata.extend(ftu_props)
+                all_metadata_labels.extend(metadata_available)
+            else:
+                # Grabbing dataset-level metadata
+                all_metadata.append(metadata_available)
+                all_metadata_labels.extend(list(metadata_available.keys()))
 
-            all_metadata_labels.extend(metadata_available)
 
         self.metadata = all_metadata
         all_metadata_labels = np.unique(all_metadata_labels)
@@ -501,7 +512,7 @@ class SlideHeatVis:
                         'textOverflow':'ellipsis',
                         'maxWidth':0
                     },
-                    tooltip_data = [
+                    tooltip_data = 
                         {
                             column: {'value':str(value),'type':'markdown'}
                             for column, value in row.items()

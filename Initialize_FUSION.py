@@ -508,7 +508,7 @@ class LayoutHandler:
         else:
             # Table with metadata for each dataset in dataset_handler
             combined_dataset_dict = []
-
+            """
             # Getting items metadata and sorting by collection
             current_items = dataset_handler.get_collection_items(dataset_handler.current_collection_path)
             # Restricting to only image metadata
@@ -537,7 +537,19 @@ class LayoutHandler:
                         folder_dict[m] = sum(item_metadata)
 
                 combined_dataset_dict.append(folder_dict)
-            
+            """
+
+            # Accessing the folder structure saved in dataset_handler            
+            for f in dataset_handler.slide_datasets:
+                folder_dict = {}
+                folder_dict['Name'] = dataset_handler.slide_datasets[f]['name']
+                
+                folder_meta_keys = list(dataset_handler.slide_datasets[f]['Metadata'])
+                for m in folder_meta_keys:
+                    folder_dict[m] = dataset_handler.slide_datasets[f]['Metadata'][m]
+
+                combined_dataset_dict.append(folder_dict)
+
             dataset_df = pd.DataFrame.from_records(combined_dataset_dict)
 
 
@@ -1034,6 +1046,8 @@ class GirderHandler:
         self.slide_datasets = {}
         for f in np.unique(slide_folderIds):
             self.slide_datasets[f] = {}
+            folder_name = dataset_handler.gc.get(f'/folder/{f}')['name']
+            self.slide_datasets[f]['name'] = folder_name
         
             folder_slides = [i for i in collection_slides if i['folderId']==f]
 
