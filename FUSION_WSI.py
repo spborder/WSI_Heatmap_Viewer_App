@@ -15,6 +15,83 @@ from shapely.geometry import Polygon, Point, shape
 from skimage.draw import polygon
 
 
+class DSASlide:
+    def __init__(self,
+                 slide_name,
+                 item_id,
+                 geojson_annotations,
+                 image_dims,
+                 base_dims):
+
+        self.slide_name = slide_name
+        self.item_id = item_id
+        self.geojson_annotations = geojson_annotations
+        self.image_dims = image_dims
+        self.base_dims = base_dims
+
+        # Initializing conversion scales
+        self.x_scale = self.image_dims[0]/self.base_dims[0]
+        self.y_scale = self.image_dims[1]/self.base_dims[1]
+        self.y_scale *=-1
+
+        # Processing geojson_annotations:
+        self.ftu_names = np.unique([f['properties']['name'] for f in self.geojson_annotations['features']])
+        self.ftu_names = [i for i in self.ftu_names if not i=='Spots']
+
+        #self.geojson_ftus = {'type':'FeatureCollection', 'features': []}
+        self.ftu_polys = {
+            ftu: [shape(f['geometry']) for f in self.geojson_annotations['features'] if f['properties']['name']==ftu]
+            for ftu in self.ftu_names
+        }
+
+        self.ftu_props = {
+            ftu: [f['properties'] for f in self.geojson_annotations['features'] if f['properties']['name']==ftu]
+            for ftu in self.ftu_names
+        }
+
+        self.spot_polys = [shape(f['geometry']) for f in self.geojson_annotations['features'] if f['properties']['name']=='Spots']
+        self.spot_props = [f['properties'] for f in self.geojson_annotations['features'] if f['properties']['name']=='Spots']
+
+    def find_intersecting_spots(self,box_poly):
+
+        # Finging intersecting spots
+        intersecting_spot_idxes = [i for i in range(0,len(self.spot_polys)) if self.spot_polys[i].intersects(box_poly)]
+        
+        # Returning list of dictionaries using original keys
+        intersecting_spot_props = []
+        if len(intersecting_spot_idxes)>0:
+            intersecting_spot_props = [self.spot_props[i] for i in intersecting_spot_idxes]
+
+        return intersecting_spot_props
+
+    def find_intersecting_spots(self, box_poly, ftu: str):
+
+        if ftu in self.ftu_names:
+            
+            # Finding which members of a specfied ftu group intersect with the provided box_poly
+            ftu_intersect_idx = [i for i in range(0,len(self.ftu_polys[ftu])) if self.ftu_polys[ftu][i].intersects(box_poly)]
+            
+            # Returning list of dictionaries that use original keys in properties
+            intersecting_ftu_props = []
+            if len(ftu_intersect_idx)>0:
+                intersecting_ftu_props = [self.ftu_props[ftu][i] for i in ftu_intersect_idx]
+
+            return intersecting_ftu_props
+        else:
+            raise ValueError
+        
+    def convert_map_coords(self, input_coords):
+
+        # Convert map coordinates to slide coordinates
+        # input_coords are in terms of the tile map and returned coordinates are relative to the slide pixel dimensions
+        return_coords = []
+        for i in input_coords:
+            return_coords.append([i[0]*self.x_scale,i[1]*self.y_scale])
+
+        return return_coords
+
+
+
 class WholeSlide:
     def __init__(self,
                 image_url,

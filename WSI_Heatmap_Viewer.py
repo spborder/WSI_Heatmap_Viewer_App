@@ -54,7 +54,7 @@ from dash_extensions import Download
 from timeit import default_timer as timer
 #import diskcache
 
-from FUSION_WSI import WholeSlide
+from FUSION_WSI import WholeSlide, DSASlide
 from Initialize_FUSION import DatasetHandler, LayoutHandler, DownloadHandler, GirderHandler
 
 
@@ -228,7 +228,7 @@ class SlideHeatVis:
         if self.run_type == 'local':
             self.app.run_server(debug=False,use_reloader=False,port=8000)
 
-        elif self.run_type == 'AWS':
+        elif self.run_type == 'AWS' or self.run_type=='dsa':
             self.app.run_server(host = '0.0.0.0',debug=False,use_reloader=False,port=8000)
 
     def view_instructions(self,n,is_open):
@@ -1774,7 +1774,7 @@ class SlideHeatVis:
 #if __name__ == '__main__':
 def app(*args):
 
-    run_type = 'local'
+    run_type = 'dsa'
 
     try:
         run_type = os.environ['RUNTYPE']
@@ -1848,76 +1848,140 @@ def app(*args):
         dataset_handler = GirderHandler(apiUrl=dsa_url)
 
         # Using environment variables for login TODO: Add login to main page
-        try:
-            username = os.environ.get('DSA_USER')
-            p_word = os.environ.get('DSA_PWORD')
-            dataset_handler.authenticate(username,p_word)
-        except:
-            print('Get a load of this guy, no login!')
+        #try:
+        username = os.environ.get('DSA_USER')
+        p_word = os.environ.get('DSA_PWORD')
+        dataset_handler.authenticate(username,p_word)
+        #except:
+        #    print('Get a load of this guy, no login!')
 
         # Initial collection TODO: get some default image as a placeholder in the visualization
+        initial_collection = '/collection/10X_Visium'
+        setattr(dataset_handler,'current_collection_path',initial_collection)
+        print(f'initial collection: {initial_collection}')
+        initial_collection_id = dataset_handler.gc.get('resource/lookup',parameters={'path':initial_collection})
+        setattr(dataset_handler,'current_collection_id',initial_collection_id)
+        print(f'found initial collection: {initial_collection_id}')
+        # Contents of folder
+        initial_collection_contents = dataset_handler.gc.get(f'resource/{initial_collection_id["_id"]}/items',parameters={'type':'collection'})
+        #print(f'contents: {initial_collection_contents}')
+        initial_collection_contents = [i for i in initial_collection_contents if 'largeImage' in i]
+
+    if not run_type=='dsa':
+        # Reading dictionary containing paths for specific cell types
+        cell_graphics_key = cell_graphics_path
+        cell_graphics_json = json.load(open(cell_graphics_key))
+        cell_names = []
+        for ct in cell_graphics_json:
+            cell_names.append(cell_graphics_json[ct]['full'])
+
+        # Compiling info for clustering metadata
+        metadata = []
+        for m in metadata_paths:
+            # Reading geojson file
+            with open(m) as f:
+                current_geojson = geojson.load(f)
+            
+            # Iterating through features and adding properties to metadata
+            # This will not include any of the geometries data which would be the majority
+            for f in current_geojson['features']:
+                metadata.append(f['properties'])
+            
+        # Adding ASCT+B table to files
+        asct_b_table = pd.read_csv(asct_b_path,skiprows=list(range(10)))
+
+        # Separate class for WSIs when running outside of DSA
+        wsi = WholeSlide(slide_url,slide_name,slide_info_dict[slide_name],ftu_path,spot_path)
+
+        # Calculating center point for initial layout
+        current_slide_bounds = slide_info_dict[slide_name]['bounds']
+        center_point = [(current_slide_bounds[1]+current_slide_bounds[3])/2,(current_slide_bounds[0]+current_slide_bounds[2])/2]
         
+        if dataset_info_dict['ftu']['annotation_type']=='GeoJSON':
+            map_dict = {
+                'url':wsi.image_url,
+                'FTUs':{
+                    struct : {
+                        'geojson':{'type':'FeatureCollection','features':[i for i in wsi.geojson_ftus['features'] if i['properties']['structure']==struct]},
+                        'id':{'type':'ftu-bounds','index':list(wsi.ftus.keys()).index(struct)},
+                        'color':'',
+                        'hover_color':''
+                    }
+                    for struct in list(wsi.ftus.keys())
+                }
+            }
+
+        if dataset_info_dict['omics_type']=='Visium':
+            spot_dict = {
+                'geojson':wsi.geojson_spots,
+                'id': {'type':'ftu-bounds','index':len(list(wsi.ftus.keys()))},
+                'color': '#dffa00',
+                'hover_color':'#9caf00'
+            }
+
+    else:
+
+        # Getting graphics_reference.json from the FUSION Assets folder
+        assets_path = '/collection/FUSION Assets/'
+
+        cell_graphics_key = dataset_handler.gc.get('resource/lookup',parameters={'path':assets_path+'cell_graphics/graphic_reference.json'})
+        # Downloading cell_graphics_key to get json file contents
+        cell_graphics_json = dataset_handler.gc.get(f'item/{cell_graphics_key["_id"]}/download')
+        cell_names = []
+        for ct in cell_graphics_json:
+            cell_names.append(cell_graphics_json[ct]['full'])
 
 
-    # Adding slide paths to the slide_info_dict
+        # Getting asct+b table
+        asct_b_table_id = dataset_handler.gc.get('resource/lookup',parameters={'path':assets_path+'asct_b/Kidney_v1.2 - Kidney_v1.2.csv'})['_id']
+        token = dataset_handler.get_token()
+        asct_b_table = pd.read_csv(dsa_url+f'item/{asct_b_table_id}/download?token={token}',skiprows=list(range(10)))
 
-    # Reading dictionary containing paths for specific cell types
-    cell_graphics_key = cell_graphics_path
-    cell_graphics_json = json.load(open(cell_graphics_key))
-    cell_names = []
-    for ct in cell_graphics_json:
-        cell_names.append(cell_graphics_json[ct]['full'])
+        print(f'first slide: {initial_collection_contents[0]["name"]}')
+        map_bounds, base_dims, image_dims, geojson_annotations, slide_url = dataset_handler.get_resource_map_data(resource=initial_collection_contents[0]['_id'])
+        print(f'map_bounds: {map_bounds}')
+        print(f'base_dims: {base_dims}')
+        print(f'image_dims: {image_dims}')
 
-    # Compiling info for clustering metadata
-    metadata = []
-    for m in metadata_paths:
-        # Reading geojson file
-        with open(m) as f:
-            current_geojson = geojson.load(f)
-        
-        # Iterating through features and adding properties to metadata
-        # This will not include any of the geometries data which would be the majority
-        for f in current_geojson['features']:
+        metadata = []
+        for f in geojson_annotations['features']:
             metadata.append(f['properties'])
-        
-    # Adding ASCT+B table to files
-    asct_b_table = pd.read_csv(asct_b_path,skiprows=list(range(10)))
 
-    wsi = WholeSlide(slide_url,slide_name,slide_info_dict[slide_name],ftu_path,spot_path)
+        # Getting the slide data for DSASlide()
 
-    external_stylesheets = [dbc.themes.LUX,dbc.icons.BOOTSTRAP]
+        slide_name = initial_collection_contents[0]['name']
+        slide_item_id = initial_collection_contents[0]['_id']
+        slide_names = [i['name'] for i in initial_collection_contents if 'largeImage' in i]
 
-    # Calculating center point for initial layout
-    current_slide_bounds = slide_info_dict[slide_name]['bounds']
-    center_point = [(current_slide_bounds[1]+current_slide_bounds[3])/2,(current_slide_bounds[0]+current_slide_bounds[2])/2]
-    
-    if dataset_info_dict['ftu']['annotation_type']=='GeoJSON':
+        wsi = DSASlide(slide_name,slide_item_id,geojson_annotations,image_dims,base_dims)
+        center_point = [0,0]
+
         map_dict = {
-            'url':wsi.image_url,
+            'url':slide_url,
             'FTUs':{
                 struct : {
-                    'geojson':{'type':'FeatureCollection','features':[i for i in wsi.geojson_ftus['features'] if i['properties']['structure']==struct]},
-                    'id':{'type':'ftu-bounds','index':list(wsi.ftus.keys()).index(struct)},
+                    'geojson':{'type':'FeatureCollection','features':[i for i in wsi.geojson_annotations['features'] if i['properties']['name']==struct]},
+                    'id':{'type':'ftu-bounds','index':wsi.ftu_names.index(struct)},
                     'color':'',
                     'hover_color':''
                 }
-                for struct in list(wsi.ftus.keys())
+                for struct in wsi.ftu_names
             }
         }
-
-
-    if dataset_info_dict['omics_type']=='Visium':
         spot_dict = {
-            'geojson':wsi.geojson_spots,
-            'id': {'type':'ftu-bounds','index':len(list(wsi.ftus.keys()))},
-            'color': '#dffa00',
+            'geojson':{'type':'FeatureCollection','features':[i for i in wsi.geojson_annotations['features'] if i['properties']['name']=='Spots']},
+            'id':{'type':'ftu-bounds','index':len(wsi.ftu_names)},
+            'color':'#dffa00',
             'hover_color':'#9caf00'
         }
+
+
+    external_stylesheets = [dbc.themes.LUX,dbc.icons.BOOTSTRAP]
 
     layout_handler = LayoutHandler()
     layout_handler.gen_initial_layout(slide_names)
     layout_handler.gen_vis_layout(cell_names,center_point,map_dict,spot_dict)
-    layout_handler.gen_builder_layout(dataset_handler)
+    layout_handler.gen_builder_layout(dataset_handler,run_type)
 
     download_handler = DownloadHandler(dataset_handler)
 

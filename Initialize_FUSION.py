@@ -467,7 +467,7 @@ class LayoutHandler:
         self.layout_dict['vis'] = vis_content
         self.description_dict['vis'] = vis_description
 
-    def gen_builder_layout(self, dataset_handler):
+    def gen_builder_layout(self, dataset_handler,run_type):
 
         # This builds the layout for the Dataset Builder functionality, 
         # allowing users to select which datasets/slides are incorporated into their 
@@ -482,29 +482,63 @@ class LayoutHandler:
             html.P('Happy fusing!')
         ]
 
-        # Table containing information on each datset in dataset_handler.dataset_reference
-        include_columns = ["name","organ","histology_type","stain","omics_type","description"]
-        combined_dataset_dict = []
-        for d_name in dataset_handler.dataset_names:
-            specific_dict = dataset_handler.get_dataset(d_name)
-            dataset_dict = {}
-            for i in include_columns:
-                dataset_dict[i] = specific_dict[i]
+        if not run_type=='dsa':
+            # Table containing information on each datset in dataset_handler.dataset_reference
+            include_columns = ["name","organ","histology_type","stain","omics_type","description"]
+            combined_dataset_dict = []
+            for d_name in dataset_handler.dataset_names:
+                specific_dict = dataset_handler.get_dataset(d_name)
+                dataset_dict = {}
+                for i in include_columns:
+                    dataset_dict[i] = specific_dict[i]
 
-            # Adding extra info determined from nested keys (ftu, slide_info)
-            if type(specific_dict['metadata'])==list:
-                dataset_dict['metadata'] = ','.join(specific_dict['metadata'])
-            else:
-                dataset_dict['metadata'] = specific_dict['metadata']
+                # Adding extra info determined from nested keys (ftu, slide_info)
+                if type(specific_dict['metadata'])==list:
+                    dataset_dict['metadata'] = ','.join(specific_dict['metadata'])
+                else:
+                    dataset_dict['metadata'] = specific_dict['metadata']
 
-            dataset_dict['annotation_type'] = specific_dict['ftu']['annotation_type']
-            dataset_dict['FTUs'] = ','.join(list(specific_dict['ftu']['names'].keys()))
-            dataset_dict['N_Slides'] = len(specific_dict['slide_info'])
+                dataset_dict['annotation_type'] = specific_dict['ftu']['annotation_type']
+                dataset_dict['FTUs'] = ','.join(list(specific_dict['ftu']['names'].keys()))
+                dataset_dict['N_Slides'] = len(specific_dict['slide_info'])
 
-            combined_dataset_dict.append(dataset_dict)
+                combined_dataset_dict.append(dataset_dict)
         
-        dataset_df = pd.DataFrame.from_records(combined_dataset_dict)
-        
+            dataset_df = pd.DataFrame.from_records(combined_dataset_dict)
+        else:
+            # Table with metadata for each dataset in dataset_handler
+            combined_dataset_dict = []
+
+            # Getting items metadata and sorting by collection
+            current_items = dataset_handler.get_collection_items(dataset_handler.current_collection_path)
+            # Restricting to only image metadata
+            current_items = [i for i in current_items if 'largeImage' in i]
+            # Ordering by folderId
+            folderIds = [i['folderId'] for i in current_items]
+            for f in np.unique(folderIds):
+                folder_name = dataset_handler.gc.get(f'/folder/{f}')['name']
+                print(folder_name)
+                folder_data = [i['meta'] for i in current_items if i['folderId']==f]
+                meta_keys = []
+                for i in folder_data:
+                    meta_keys.extend(list(i.keys()))
+
+                meta_keys = list(set(meta_keys))
+                folder_dict = {'Name':folder_name}
+
+                # Not adding dictionaries to the folder metadata
+                for m in meta_keys:
+                    item_metadata = [item[m] for item in folder_data if m in item]
+                    if type(item_metadata[0])==str:
+                        folder_dict[m] = ','.join(list(set(item_metadata)))
+                    elif type(item_metadata[0])==int or type(item_metadata[0])==float:
+                        folder_dict[m] = sum(item_metadata)
+
+                combined_dataset_dict.append(folder_dict)
+            
+            dataset_df = pd.DataFrame.from_records(combined_dataset_dict)
+
+
         # Table with a bunch of filtering and tooltip info
         table_layout = html.Div([
             dash_table.DataTable(
@@ -843,6 +877,8 @@ class GirderHandler:
         # Getting session token for accessing private collections
         user_token = self.gc.get('token/session')['token']
 
+        self.user_token = user_token
+
         return user_token
 
     def get_collections(self):
@@ -859,10 +895,23 @@ class GirderHandler:
         item_id = self.gc.get('resource/lookup',parameters={'path':resource})['_id']
 
         return item_id
-    
+
+    def get_resource_metadata(self,resource):
+        # Get metadata associated with resource
+        resource_metadata = self.gc.get('resource/lookup',parameters={'path':resource})['meta']
+
+        return resource_metadata
+
+    def get_collection_items(self,collection_path):
+        # Get list of items in a collection
+        collection_id = self.get_resource_id(collection_path)
+        collection_contents = self.gc.get(f'resource/{collection_id}/items',parameters={'type':'collection'})
+
+        return collection_contents
+
     def get_tile_metadata(self,item_id):
         # tile metadata includes: 'levels', 'magnification', 'mm_x', 'mm_y', 'sizeX', 'sizeY', 'tileHeight', 'tileWidth'
-        tile_metadata = self.gc(f'item/{item_id}/tiles')
+        tile_metadata = self.gc.get(f'item/{item_id}/tiles')
 
         return tile_metadata
     
@@ -894,6 +943,7 @@ class GirderHandler:
         final_ann = {'type':'FeatureCollection','features':[]}
         for a in annotations:
             if 'elements' in a['annotation']:
+                f_name = a['annotation']['name']
                 for f in a['annotation']['elements']:
                     f_dict = {'type':'Feature','geometry':{'type':'Polygon','coordinates':[]}}
                     og_coords = np.squeeze(np.array(f['points']))
@@ -907,6 +957,8 @@ class GirderHandler:
                         if 'user' in f:
                             f_dict['properties'] = f['user']
 
+                        f_dict['properties']['name'] = f_name
+
                         final_ann['features'].append(f_dict)
 
         return final_ann
@@ -915,7 +967,11 @@ class GirderHandler:
         # Getting all of the necessary materials for loading a new slide
 
         # Step 1: get resource item id
-        item_id = self.get_resource_id(resource)
+        # lol
+        if os.sep in resource:
+            item_id = self.get_resource_id(resource)
+        else:
+            item_id = resource
 
         # Step 2: get resource tile metadata
         tile_metadata = self.get_tile_metadata(item_id)
@@ -952,7 +1008,7 @@ class GirderHandler:
         user_token = self.get_token()
         tile_url = self.gc.urlBase+f'item/{item_id}'+'/tiles/zxy/{z}/{x}/{y}?token='+user_token
 
-        return map_bounds, geojson_annotations, tile_url
+        return map_bounds, base_dims, image_dims, geojson_annotations, tile_url
 
     def get_cli_list(self):
         # Get a list of possible CLIs available for current user
@@ -1221,6 +1277,7 @@ class DownloadHandler:
     def extract_manual(self, slide, data):
     """
 
+"""
 @dataclass
 class Callback:
     func: Callable
@@ -1253,7 +1310,7 @@ class CallbackManager:
                 callback.outputs,callback.inputs,callback.states,**callback.kwargs
             )(callback.func)
 
-
+"""
 
 
 
