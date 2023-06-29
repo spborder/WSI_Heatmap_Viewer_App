@@ -44,6 +44,8 @@ class DSASlide:
             for ftu in self.ftu_names
         }
 
+        self.geojson_ftus = {'type':'FeatureCollection','features':[i for i in self.geojson_annotations['features'] if not i['properties']['name']=='Spots']}
+
         self.ftu_props = {
             ftu: [f['properties'] for f in self.geojson_annotations['features'] if f['properties']['name']==ftu]
             for ftu in self.ftu_names
@@ -51,6 +53,10 @@ class DSASlide:
 
         self.spot_polys = [shape(f['geometry']) for f in self.geojson_annotations['features'] if f['properties']['name']=='Spots']
         self.spot_props = [f['properties'] for f in self.geojson_annotations['features'] if f['properties']['name']=='Spots']
+
+        self.geojson_spots = {'type':'FeatureCollection','features':[i for i in self.geojson_annotations['features'] if i['properties']['name']=='Spots']}
+
+
 
     def find_intersecting_spots(self,box_poly):
 

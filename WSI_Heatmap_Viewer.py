@@ -120,7 +120,6 @@ class SlideHeatVis:
         else:
             self.cell_graphics_key = cell_graphics_key
 
-        print(self.cell_graphics_key)
         # Inverting the graphics key to get {'full_name':'abbreviation'}
         self.cell_names_key = {}
         for ct in self.cell_graphics_key:
@@ -142,7 +141,7 @@ class SlideHeatVis:
         }
 
         self.current_ftu_layers = self.wsi.ftu_names
-        self.current_ftus = self.wsi.ftus
+        self.current_ftus = self.wsi.ftu_names
         self.pie_ftu = self.current_ftu_layers[-1]
         self.pie_chart_order = self.current_ftu_layers.copy()
 
@@ -482,11 +481,12 @@ class SlideHeatVis:
                 all_metadata_labels.extend(metadata_available)
             else:
                 # Grabbing dataset-level metadata
+                metadata_available['FTU Expression Statistics'] = []
+
                 all_metadata.append(metadata_available)
                 all_metadata_labels.extend(list(metadata_available.keys()))
 
-
-        self.metadata = all_metadata
+        #self.metadata = all_metadata
         all_metadata_labels = np.unique(all_metadata_labels)
         slide_dataset_df = pd.DataFrame.from_records(slide_dataset_dict)
         self.current_slides = []
@@ -585,6 +585,7 @@ class SlideHeatVis:
                 group_bar = 'dataset'
 
             plot_data = self.selected_meta_df.dropna(subset=[new_meta]).convert_dtypes()
+            print(plot_data.columns)
 
             # Filtering out de-selected slides
             present_slides = [s['Slide Names'] for s in self.current_slides]
@@ -894,17 +895,17 @@ class SlideHeatVis:
                 'FTUs':{
                     struct : {
                         'geojson':{'type':'FeatureCollection','features':[i for i in self.wsi.geojson_ftus['features'] if i['properties']['structure']==struct]},
-                        'id':{'type':'ftu-bounds','index':list(self.wsi.ftus.keys()).index(struct)},
+                        'id':{'type':'ftu-bounds','index':self.wsi.ftu_names.index(struct)},
                         'color':'',
                         'hover_color':''
                     }
-                    for struct in list(self.wsi.ftus.keys())
+                    for struct in self.wsi.ftu_names
                 }
             }
 
             spot_dict = {
                 'geojson':self.wsi.geojson_spots,
-                'id': {'type':'ftu-bounds','index':len(list(self.wsi.ftus.keys()))},
+                'id': {'type':'ftu-bounds','index':len(self.wsi.ftu_names)},
                 'color': '#dffa00',
                 'hover_color':'#9caf00'
             }
@@ -1208,7 +1209,7 @@ class SlideHeatVis:
                     'color':'',
                     'hover_color':''
                 }
-                for struct in list(self.wsi.ftus.keys())
+                for struct in self.wsi.ftu_names
             }
         }
 
