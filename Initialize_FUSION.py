@@ -1046,7 +1046,7 @@ class GirderHandler:
         self.slide_datasets = {}
         for f in np.unique(slide_folderIds):
             self.slide_datasets[f] = {}
-            folder_name = dataset_handler.gc.get(f'/folder/{f}')['name']
+            folder_name = self.gc.get(f'/folder/{f}')['name']
             self.slide_datasets[f]['name'] = folder_name
         
             folder_slides = [i for i in collection_slides if i['folderId']==f]

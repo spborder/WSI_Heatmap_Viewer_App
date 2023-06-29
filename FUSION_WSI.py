@@ -141,6 +141,9 @@ class WholeSlide:
             self.ftus = self.process_ftus()
         else:
             self.ftus = {}
+
+
+        self.ftu_names = list(self.ftus.keys())
             
         self.spots = self.process_spots()
 

@@ -68,7 +68,7 @@ class SlideHeatVis:
                 cell_graphics_key,
                 asct_b_table,
                 cluster_metadata,
-                slide_info_dict,
+                slide_info_dict=None,
                 run_type = None,
                 ga_tag = None
                 ):
@@ -115,7 +115,12 @@ class SlideHeatVis:
             ]
         self.wsi = wsi
 
-        self.cell_graphics_key = json.load(open(cell_graphics_key))
+        if type(cell_graphics_key)==str:
+            self.cell_graphics_key = json.load(open(cell_graphics_key))
+        else:
+            self.cell_graphics_key = cell_graphics_key
+
+        print(self.cell_graphics_key)
         # Inverting the graphics key to get {'full_name':'abbreviation'}
         self.cell_names_key = {}
         for ct in self.cell_graphics_key:
@@ -128,7 +133,7 @@ class SlideHeatVis:
         self.table_df = asct_b_table    
 
         # FTU settings
-        self.ftus = list(self.wsi.ann_ids.keys())
+        self.ftus = self.wsi.ftu_names
         self.ftu_colors = {
             'Glomeruli':'#390191',
             'Tubules':'#e71d1d',
@@ -136,7 +141,7 @@ class SlideHeatVis:
             'Spots':'#dffa00'
         }
 
-        self.current_ftu_layers = list(self.wsi.ftus.keys())
+        self.current_ftu_layers = self.wsi.ftu_names
         self.current_ftus = self.wsi.ftus
         self.pie_ftu = self.current_ftu_layers[-1]
         self.pie_chart_order = self.current_ftu_layers.copy()
@@ -512,7 +517,7 @@ class SlideHeatVis:
                         'textOverflow':'ellipsis',
                         'maxWidth':0
                     },
-                    tooltip_data = 
+                    tooltip_data = [
                         {
                             column: {'value':str(value),'type':'markdown'}
                             for column, value in row.items()
@@ -1207,8 +1212,8 @@ class SlideHeatVis:
             }
         }
 
-        self.current_ftus = list(self.wsi.ftus.keys())
-        self.current_ftu_layers = list(self.wsi.ftus.keys())
+        self.current_ftus = self.wsi.ftu_names
+        self.current_ftu_layers = self.wsi.ftu_names
 
         spot_dict = {
             'geojson':self.wsi.geojson_spots,
@@ -1952,11 +1957,10 @@ def app(*args):
 
         cell_graphics_key = dataset_handler.gc.get('resource/lookup',parameters={'path':assets_path+'cell_graphics/graphic_reference.json'})
         # Downloading cell_graphics_key to get json file contents
-        cell_graphics_json = dataset_handler.gc.get(f'item/{cell_graphics_key["_id"]}/download')
+        cell_graphics_key = dataset_handler.gc.get(f'item/{cell_graphics_key["_id"]}/download')
         cell_names = []
-        for ct in cell_graphics_json:
-            cell_names.append(cell_graphics_json[ct]['full'])
-
+        for ct in cell_graphics_key:
+            cell_names.append(cell_graphics_key[ct]['full'])
 
         # Getting asct+b table
         asct_b_table_id = dataset_handler.gc.get('resource/lookup',parameters={'path':assets_path+'asct_b/Kidney_v1.2 - Kidney_v1.2.csv'})['_id']
@@ -1978,6 +1982,7 @@ def app(*args):
         slide_name = initial_collection_contents[0]['name']
         slide_item_id = initial_collection_contents[0]['_id']
         slide_names = [i['name'] for i in initial_collection_contents if 'largeImage' in i]
+        slide_info_dict = None
 
         wsi = DSASlide(slide_name,slide_item_id,geojson_annotations,image_dims,base_dims)
         center_point = [0,0]
