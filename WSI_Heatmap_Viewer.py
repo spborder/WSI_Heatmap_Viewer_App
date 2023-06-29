@@ -576,91 +576,115 @@ class SlideHeatVis:
         if type(group_type)==list:
             group_type = group_type[0]
 
-        if not new_meta is None:
-            if group_type == 'By Dataset':
-                group_bar = 'dataset'   
-            elif group_type == 'By Slide':
-                group_bar = 'slide_name'
+
+        if not self.run__type == 'dsa':
+
+            if not new_meta is None:
+                if group_type == 'By Dataset':
+                    group_bar = 'dataset'   
+                elif group_type == 'By Slide':
+                    group_bar = 'slide_name'
+                else:
+                    group_bar = 'dataset'
+
+                plot_data = self.selected_meta_df.dropna(subset=[new_meta]).convert_dtypes()
+
+                # Filtering out de-selected slides
+                present_slides = [s['Slide Names'] for s in self.current_slides]
+                included_slides = [t for t in present_slides if self.current_slides[present_slides.index(t)]['included']]
+                plot_data = plot_data[plot_data['slide_name'].isin(included_slides)]
+
+                if plot_data[new_meta].dtypes == float:
+                    # Making violin plots 
+                    fig = go.Figure(px.violin(plot_data[plot_data[new_meta]>0],x=group_bar,y=new_meta))
+                
+                elif plot_data[new_meta].dtypes == object:
+
+                    if new_meta == 'Main_Cell_Types':
+
+                        all_cell_types_df = pd.DataFrame.from_records(plot_data[new_meta].tolist())
+                        cell_types_present = all_cell_types_df.columns.to_list()
+                        cell_types_turn_off = False
+                        
+                        all_cell_types_df[group_bar] = plot_data[group_bar].tolist()
+
+                        if not sub_meta is None:
+                            fig = go.Figure(px.violin(all_cell_types_df,x=group_bar,y=sub_meta))
+                        else:
+                            fig = go.Figure()
+
+                    if new_meta == 'Cell_States':
+                        all_cell_states_df = pd.DataFrame.from_records(plot_data[new_meta].tolist())
+
+                        cell_types_present = all_cell_states_df.columns.to_list()
+                        cell_types_turn_off = False
+
+                        if not sub_meta is None:
+                            specific_cell_states_df = pd.DataFrame.from_records(all_cell_states_df[sub_meta].tolist())
+
+                            groups_present = plot_data[group_bar].unique()
+                            count_df = pd.DataFrame()
+                            for g in groups_present:
+                                g_df = specific_cell_states_df[plot_data[group_bar]==g]
+                                g_counts = g_df.sum(axis=0).to_frame()
+                                g_counts[group_bar] = [g]*g_counts.shape[0]
+
+                                if count_df.empty:
+                                    count_df = g_counts
+                                else:
+                                    count_df = pd.concat([count_df,g_counts],axis=0,ignore_index=False)
+
+                            count_df = count_df.reset_index()
+                            count_df.columns = ['Cell State','Abundance',group_bar]
+
+                            fig = go.Figure(px.bar(count_df,x=group_bar,y='Abundance',color='Cell State'))
+                        else:
+                            fig = go.Figure()
+
+                else:
+                    # Finding counts of each unique value present
+                    groups_present = plot_data[group_bar].unique()
+                    count_df = pd.DataFrame()
+                    for g in groups_present:
+                        g_df = plot_data[plot_data[group_bar]==g]
+                        g_counts = g_df[new_meta].value_counts().to_frame()
+                        g_counts[group_bar] = [g]*g_counts.shape[0]
+
+                        if count_df.empty:
+                            count_df = g_counts
+                        else:
+                            count_df = pd.concat([count_df,g_counts],axis=0,ignore_index=False)
+
+                    count_df = count_df.reset_index()
+                    count_df.columns = [new_meta,'counts',group_bar]
+
+                    fig = go.Figure(px.bar(count_df,x = group_bar, y = 'counts',color=new_meta))
+
+                return [slide_select_options, [fig], [cell_types_present], [cell_types_turn_off], [current_slide_count]]
             else:
-                group_bar = 'dataset'
+                return [slide_select_options, [go.Figure()], [cell_types_present], [cell_types_turn_off], [current_slide_count]]
 
-            plot_data = self.selected_meta_df.dropna(subset=[new_meta]).convert_dtypes()
-            print(plot_data.columns)
-
-            # Filtering out de-selected slides
-            present_slides = [s['Slide Names'] for s in self.current_slides]
-            included_slides = [t for t in present_slides if self.current_slides[present_slides.index(t)]['included']]
-            plot_data = plot_data[plot_data['slide_name'].isin(included_slides)]
-
-            if plot_data[new_meta].dtypes == float:
-                # Making violin plots 
-                fig = go.Figure(px.violin(plot_data[plot_data[new_meta]>0],x=group_bar,y=new_meta))
-            
-            elif plot_data[new_meta].dtypes == object:
-
-                if new_meta == 'Main_Cell_Types':
-
-                    all_cell_types_df = pd.DataFrame.from_records(plot_data[new_meta].tolist())
-                    cell_types_present = all_cell_types_df.columns.to_list()
-                    cell_types_turn_off = False
-                    
-                    all_cell_types_df[group_bar] = plot_data[group_bar].tolist()
-
-                    if not sub_meta is None:
-                        fig = go.Figure(px.violin(all_cell_types_df,x=group_bar,y=sub_meta))
-                    else:
-                        fig = go.Figure()
-
-                if new_meta == 'Cell_States':
-                    all_cell_states_df = pd.DataFrame.from_records(plot_data[new_meta].tolist())
-
-                    cell_types_present = all_cell_states_df.columns.to_list()
-                    cell_types_turn_off = False
-
-                    if not sub_meta is None:
-                        specific_cell_states_df = pd.DataFrame.from_records(all_cell_states_df[sub_meta].tolist())
-
-                        groups_present = plot_data[group_bar].unique()
-                        count_df = pd.DataFrame()
-                        for g in groups_present:
-                            g_df = specific_cell_states_df[plot_data[group_bar]==g]
-                            g_counts = g_df.sum(axis=0).to_frame()
-                            g_counts[group_bar] = [g]*g_counts.shape[0]
-
-                            if count_df.empty:
-                                count_df = g_counts
-                            else:
-                                count_df = pd.concat([count_df,g_counts],axis=0,ignore_index=False)
-
-                        count_df = count_df.reset_index()
-                        count_df.columns = ['Cell State','Abundance',group_bar]
-
-                        fig = go.Figure(px.bar(count_df,x=group_bar,y='Abundance',color='Cell State'))
-                    else:
-                        fig = go.Figure()
-
-            else:
-                # Finding counts of each unique value present
-                groups_present = plot_data[group_bar].unique()
-                count_df = pd.DataFrame()
-                for g in groups_present:
-                    g_df = plot_data[plot_data[group_bar]==g]
-                    g_counts = g_df[new_meta].value_counts().to_frame()
-                    g_counts[group_bar] = [g]*g_counts.shape[0]
-
-                    if count_df.empty:
-                        count_df = g_counts
-                    else:
-                        count_df = pd.concat([count_df,g_counts],axis=0,ignore_index=False)
-
-                count_df = count_df.reset_index()
-                count_df.columns = [new_meta,'counts',group_bar]
-
-                fig = go.Figure(px.bar(count_df,x = group_bar, y = 'counts',color=new_meta))
-
-            return [slide_select_options, [fig], [cell_types_present], [cell_types_turn_off], [current_slide_count]]
         else:
-            return [slide_select_options, [go.Figure()], [cell_types_present], [cell_types_turn_off], [current_slide_count]]
+            # For DSA-backend deployment
+            if not new_meta is None:
+                # Filtering out de-selected slides
+                present_slides = [s['Slide Names'] for s in self.current_slides]
+                included_slides = [t for t in present_slides if self.current_slides[present_slides.index(t)]['included']]
+                if not len(included_slides)==len(present_slides):
+                    
+                    # Re-calculate dataset-level metadata
+                    dataset_metadata = []
+                    for d_id in self.dataset_handler.slide_datasets:
+                        slide_data = self.dataset_handler.slide_datasets[d_id]
+                        d_include = [s for s in slide_data if s['name'] in included_slides]
+
+                        if len(d_include)>0:
+                            d_dict = {'Dataset':[slide_data['name']]*len(d_include),'Slide Name':[s['name'] for s in d_include]}
+
+                            if not new_meta=='FTU Expression Statistics':
+                                d_dict[new_meta] = [s['meta'][new_meta] for s in d_include]
+                            
+
 
     def update_current_slides(self,slide_rows):
 
