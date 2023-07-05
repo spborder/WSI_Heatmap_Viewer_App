@@ -336,6 +336,8 @@ class SlideHeatVis:
             [Output('slide-tile','url'),
              Output('layer-control','children'),
              Output('slide-map','center'),
+             Output('slide-map','bounds'),
+             Output('slide-tile','tileSize'),
              Output('feature-group','children')],
             Input('slide-select','value'),
             prevent_initial_call=True,
@@ -410,7 +412,6 @@ class SlideHeatVis:
              Input({'type':'slide-dataset-table','index':ALL},'selected_rows')],
              [Output('slide-select','options'),
              Output({'type':'meta-plot','index':ALL},'figure'),
-             Output({'type':'cell-meta-drop','index':ALL},'options'),
              Output({'type':'cell-meta-drop','index':ALL},'disabled'),
              Output({'type':'current-slide-count','index':ALL},'children')],
              prevent_initial_call = True
@@ -494,6 +495,20 @@ class SlideHeatVis:
             i['included'] = True
             self.current_slides.append(i)
 
+        # Different procedure for local vs. DSA-backend 
+        if not self.run_type=='dsa':
+            cell_type_dropdowns = [
+                dbc.Col(dcc.Dropdown(all_metadata_labels,id={'type':'meta-drop','index':0})),
+                dbc.Col(dcc.Dropdown([self.cell_names_key[c] for c in list(self.cell_names_key.keys())],id={'type':'cell-meta-drop','index':0},disabled=True))
+            ]
+        else:
+            cell_type_dropdowns = [
+                dbc.Col(dcc.Dropdown(all_metadata_labels,id={'type':'meta-drop','index':0}),md=6),
+                dbc.Col(dcc.Dropdown(['Main Cell Types','Cell States'],'Main Cell Types',id={'type':'cell-meta-drop','index':0},disabled=True),md=2),
+                dbc.Col(dcc.Dropdown(['Mean','Median','Sum','Standard Deviation','Nonzero'],'Mean',id={'type':'cell-meta-drop','index':1},disabled=True),md=2),
+                dbc.Col(dcc.Dropdown(list(self.cell_names_key.keys()),list(self.cell_names_key.keys())[0],id={'type':'cell-meta-drop','index':2},disabled=True),md=2)
+            ]
+
         if not all_metadata==[]:
             drop_div = html.Div([
                 dash_table.DataTable(
@@ -530,10 +545,7 @@ class SlideHeatVis:
                 html.B(),
                 dbc.Row(
                     id = {'type':'meta-row','index':0},
-                    children = [
-                        dbc.Col(dcc.Dropdown(all_metadata_labels,id={'type':'meta-drop','index':0})),
-                        dbc.Col(dcc.Dropdown(['Select Cell Type for Aggregated Cell State Plotting'],id={'type':'cell-meta-drop','index':0},disabled=True))
-                    ]
+                    children = cell_type_dropdowns
                 ),
                 html.B(),
                 html.P('Select whether to separate by dataset or slide'),
@@ -562,22 +574,30 @@ class SlideHeatVis:
 
     def update_metadata_plot(self,new_meta,sub_meta,group_type,slide_rows):
         
-        cell_types_turn_off = True
-        cell_types_present = ['None']
+        if not self.run_type == 'dsa':
+            cell_types_turn_off = True
+        else:
+            if not new_meta == ['FTU Expression Statistics']:
+                cell_types_turn_off = (True,True,True)
+            else:
+                cell_types_turn_off = (False, False, False)
+
 
         current_slide_count, slide_select_options = self.update_current_slides(slide_rows)
 
+        print(f'new_meta: {new_meta}')
         if type(new_meta)==list:
             new_meta = new_meta[0]
 
-        if type(sub_meta) == list:
-            sub_meta = sub_meta[0]
+        if not self.run_type=='dsa':
+            if type(sub_meta) == list:
+                sub_meta = sub_meta[0]
         
         if type(group_type)==list:
             group_type = group_type[0]
 
 
-        if not self.run__type == 'dsa':
+        if not self.run_type == 'dsa':
 
             if not new_meta is None:
                 if group_type == 'By Dataset':
@@ -660,31 +680,123 @@ class SlideHeatVis:
 
                     fig = go.Figure(px.bar(count_df,x = group_bar, y = 'counts',color=new_meta))
 
-                return [slide_select_options, [fig], [cell_types_present], [cell_types_turn_off], [current_slide_count]]
+                return [slide_select_options, [fig], [cell_types_turn_off], [current_slide_count]]
             else:
-                return [slide_select_options, [go.Figure()], [cell_types_present], [cell_types_turn_off], [current_slide_count]]
+                return [slide_select_options, [go.Figure()], [cell_types_turn_off], [current_slide_count]]
 
         else:
             # For DSA-backend deployment
             if not new_meta is None:
                 # Filtering out de-selected slides
                 present_slides = [s['Slide Names'] for s in self.current_slides]
-                included_slides = [t for t in present_slides if self.current_slides[present_slides.index(t)]['included']]
-                if not len(included_slides)==len(present_slides):
+                included_slides = [t for t in present_slides if self.current_slides[present_slides.index(t)]['included']]                    
+                #print(f'included_slides: {included_slides}')
+
+                dataset_metadata = []
+                for d_id in self.dataset_handler.slide_datasets:
+                    slide_data = self.dataset_handler.slide_datasets[d_id]['Slides']
+                    dataset_name = self.dataset_handler.slide_datasets[d_id]['name']
+                    d_include = [s for s in slide_data if s['name'] in included_slides]
+
+                    if len(d_include)>0:
+                        
+                        # Adding new_meta value to dataset dictionary
+                        if not new_meta=='FTU Expression Statistics':
+                            d_dict = {'Dataset':[],'Slide Name':[],new_meta:[]}
+
+                            for s in d_include:
+                                if new_meta in s['meta']:
+                                    d_dict['Dataset'].append(dataset_name)
+                                    d_dict['Slide Name'].append(s['name'])
+                                    d_dict[new_meta].append(s['meta'][new_meta])
+                        
+                        else:
+                            # Whether it's Mean, Median, Sum, Standard Deviation, or Nonzero
+                            #print(f'sub_meta: {sub_meta}')
+                            ftu_expression_feature = sub_meta[1]+' '
+                            # Whether it's Main Cell Types or Cell States
+                            ftu_expression_feature+=sub_meta[0]
+                            # Getting cell type abbreviation from full name
+                            cell_type = self.cell_names_key[sub_meta[2]]
+
+                            # Getting FTU specific expression values
+                            d_dict = {'Dataset':[],'Slide Name':[],'FTU':[],new_meta:[]}
+                            if sub_meta[0]=='Cell States':
+                                d_dict['State'] = []
+
+                            for d_i in d_include:
+                                slide_meta = d_i['meta']
+                                slide_name = d_i['name']
+                                ftu_expressions = [i for i in list(slide_meta.keys()) if 'Expression' in i]
+                                for f in ftu_expressions:
+                                    expression_stats = slide_meta[f][ftu_expression_feature]
+                                    for ct in list(expression_stats.keys()):
+                                        if cell_type in ct:
+                                            d_dict[new_meta].append(expression_stats[ct])
+                                            d_dict['FTU'].append(f.replace(' Expression Statistics',''))
+                                            d_dict['Dataset'].append(dataset_name)
+                                            d_dict['Slide Name'].append(slide_name)
+                                            if sub_meta[0]=='Cell States':
+                                                d_dict['State'].append(ct.split('_')[-1])
+
+
+
+                        dataset_metadata.append(d_dict)
+                        #print(f'd_dict: {d_dict}')
+
+                # Converting to dataframe
+                plot_data = pd.concat([pd.DataFrame.from_dict(i) for i in dataset_metadata],ignore_index=True)
+                plot_data = plot_data.dropna(subset=[new_meta]).convert_dtypes()
+                
+                # Assigning grouping variable
+                if group_type=='By Dataset':
+                    group_bar = 'Dataset'
+                elif group_type=='By Slide':
+                    group_bar = 'Slide Name'
+
+                # Checking if new_meta is a number or a string
+                # This is dumb, c'mon pandas
+                if plot_data[new_meta].dtype.kind in 'biufc':
+                    if group_bar == 'Dataset':
+                        print('Generating violin plot')
+                        if not new_meta == 'FTU Expression Statistics':
+                            fig = go.Figure(px.violin(plot_data,x=group_bar,y=new_meta,hover_data=['Slide Name']))
+                        else:
+                            if sub_meta[0]=='Main Cell Types':
+                                fig = go.Figure(px.violin(plot_data,x=group_bar,y=new_meta,hover_data=['Slide Name'],color='FTU'))
+                            else:
+                                fig = go.Figure(px.violin(plot_data,x=group_bar,y=new_meta,hover_data=['Slide Name','State'],color='FTU'))
+                    else:
+                        print('Generating bar plot')
+                        if not new_meta=='FTU Expression Statistics':
+                            fig = go.Figure(px.bar(plot_data,x=group_bar,y=new_meta,hover_data = ['Dataset']))
+                        else:
+                            if sub_meta[0]=='Main Cell Types':
+                                fig = go.Figure(px.bar(plot_data,x=group_bar,y=new_meta,hover_data=['Dataset'],color='FTU'))
+                            else:
+                                fig = go.Figure(px.bar(plot_data,x=group_bar,y=new_meta,hover_data=['Dataset','State'],color='FTU'))
+                else:
+                    print(f'Generating bar plot')
+                    groups_present = plot_data[group_bar].unique()
+                    count_df = pd.DataFrame()
+                    for g in groups_present:
+                        g_df = plot_data[plot_data[group_bar]==g]
+                        g_counts = g_df[new_meta].value_counts().to_frame()
+                        g_counts[group_bar] = [g]*g_counts.shape[0]
+
+                        if count_df.empty:
+                            count_df = g_counts
+                        else:
+                            count_df = pd.concat([count_df,g_counts],axis=0,ignore_index=False)
                     
-                    # Re-calculate dataset-level metadata
-                    dataset_metadata = []
-                    for d_id in self.dataset_handler.slide_datasets:
-                        slide_data = self.dataset_handler.slide_datasets[d_id]
-                        d_include = [s for s in slide_data if s['name'] in included_slides]
+                    count_df = count_df.reset_index()
+                    count_df.columns = [new_meta, 'counts', group_bar]
 
-                        if len(d_include)>0:
-                            d_dict = {'Dataset':[slide_data['name']]*len(d_include),'Slide Name':[s['name'] for s in d_include]}
+                    fig = go.Figure(px.bar(count_df, x = group_bar, y = 'counts', color = new_meta))
 
-                            if not new_meta=='FTU Expression Statistics':
-                                d_dict[new_meta] = [s['meta'][new_meta] for s in d_include]
-                            
-
+                return [slide_select_options, [fig], cell_types_turn_off,[current_slide_count]]
+            else:
+                raise exceptions.PreventUpdate
 
     def update_current_slides(self,slide_rows):
 
@@ -708,7 +820,8 @@ class SlideHeatVis:
         return [html.P(f'Included Slide Count: {len(slide_rows)}')], slide_options
 
     def update_roi_pie(self,zoom,viewport,bounds):
-
+        
+        #print(f'bounds:{bounds}')
         # Making a box-poly from the bounds
         if len(bounds)==2:
             bounds_box = shapely.geometry.box(bounds[0][1],bounds[0][0],bounds[1][1],bounds[1][0])
@@ -726,24 +839,36 @@ class SlideHeatVis:
                 intersecting_ftus[ftu] = self.wsi.find_intersecting_ftu(bounds_box,ftu)
 
         for m_idx,m_ftu in enumerate(self.wsi.manual_rois):
-            intersecting_ftus[f'Manual ROI: {m_idx}'] = {
-                'polys':[shape(m_ftu['geojson']['features'][0]['geometry'])],
-                'main_counts':[m_ftu['geojson']['features'][0]['properties']['Main_Cell_Types']],
-                'states':[m_ftu['geojson']['features'][0]['properties']['Cell_States']]
-            }
+            if not self.run_type=='dsa':
+                intersecting_ftus[f'Manual ROI: {m_idx}'] = {
+                    'polys':[shape(m_ftu['geojson']['features'][0]['geometry'])],
+                    'main_counts':[m_ftu['geojson']['features'][0]['properties']['Main_Cell_Types']],
+                    'states':[m_ftu['geojson']['features'][0]['properties']['Cell_States']]
+                }
+            else:
+                intersecting_ftus[f'Manual ROI: {m_idx}'] = m_ftu['features'][0]['properties']
 
         self.current_ftus = intersecting_ftus
         # Now we have main cell types, cell states, by ftu
 
         included_ftus = list(intersecting_ftus.keys())
-        included_ftus = [i for i in included_ftus if len(intersecting_ftus[i]['polys'])>0]
+        #print(f'included_ftus: {included_ftus}')
+        if not self.run_type == 'dsa':
+            included_ftus = [i for i in included_ftus if len(intersecting_ftus[i]['polys'])>0]
+        else:
+            included_ftus = [i for i in included_ftus if len(intersecting_ftus[i])>0]
+
 
         if len(included_ftus)>0:
 
             tab_list = []
             for f_idx,f in enumerate(included_ftus):
-                len(intersecting_ftus[f]['main_counts'])
-                counts_data = pd.DataFrame(intersecting_ftus[f]['main_counts']).sum(axis=0).to_frame()
+                if not self.run_type == 'dsa':
+                    counts_data = pd.DataFrame(intersecting_ftus[f]['main_counts']).sum(axis=0).to_frame()
+                else:
+                    counts_dict_list = [i['Main_Cell_Types'] for i in intersecting_ftus[f]]
+                    counts_data = pd.DataFrame.from_records(counts_dict_list).sum(axis=0).to_frame()
+
                 counts_data.columns = [f]
 
                 # Normalizing to sum to 1
@@ -755,7 +880,11 @@ class SlideHeatVis:
                 f_pie = px.pie(counts_data,values=f,names='index')
 
                 top_cell = counts_data['index'].tolist()[0]
-                pct_states = pd.DataFrame([i[top_cell] for i in intersecting_ftus[f]['states']]).sum(axis=0).to_frame()
+                if not self.run_type == 'dsa':
+                    pct_states = pd.DataFrame([i[top_cell] for i in intersecting_ftus[f]['states']]).sum(axis=0).to_frame()
+                else:
+                    pct_states = pd.DataFrame.from_records([i['Cell_States'][top_cell] for i in intersecting_ftus[f]]).sum(axis=0).to_frame()
+                
                 pct_states = pct_states.reset_index()
                 pct_states.columns = ['Cell State','Proportion']
                 pct_states['Proportion'] = pct_states['Proportion']/pct_states['Proportion'].sum()
@@ -817,47 +946,84 @@ class SlideHeatVis:
         raw_values_list = []
         if color_type == 'cell_value':
             # iterating through current ftus
-            for f in self.wsi.ftus:
-                for g in self.wsi.ftus[f]:
-                    # get main counts for this ftu
-                    ftu_counts = pd.DataFrame(g['main_counts'])[self.current_cell].tolist()
-                    #raw_values_list.extend([float('{:.4f}'.format(round(i,4))) for i in ftu_counts])
-                    raw_values_list.extend(ftu_counts)
+            if not self.run_type=='dsa':
+                for f in self.wsi.ftus:
+                    for g in self.wsi.ftus[f]:
+                        # get main counts for this ftu
+                        ftu_counts = pd.DataFrame(g['main_counts'])[self.current_cell].tolist()
+                        #raw_values_list.extend([float('{:.4f}'.format(round(i,4))) for i in ftu_counts])
+                        raw_values_list.extend(ftu_counts)
 
-            for g in self.wsi.spots:
-                spot_counts = pd.DataFrame(g['main_counts'])[self.current_cell].tolist()
-                raw_values_list.extend(spot_counts)
+                for g in self.wsi.spots:
+                    spot_counts = pd.DataFrame(g['main_counts'])[self.current_cell].tolist()
+                    raw_values_list.extend(spot_counts)
 
-            for f in self.wsi.manual_rois:
-                manual_counts = f['geojson']['features'][0]['properties']['Main_Cell_Types'][self.current_cell]
-                raw_values_list.append(manual_counts)
+                for f in self.wsi.manual_rois:
+                    manual_counts = f['geojson']['features'][0]['properties']['Main_Cell_Types'][self.current_cell]
+                    raw_values_list.append(manual_counts)
+
+            else:
+                for f in self.wsi.ftu_props:
+                    for g in self.wsi.ftu_props[f]:
+                        # Getting main counts for this ftu
+                        ftu_counts = g['Main_Cell_Types'][self.current_cell]
+                        raw_values_list.append(ftu_counts)
+
+                for f in self.wsi.spot_props:
+                    # Getting main counts for spots
+                    spot_counts =f['Main_Cell_Types'][self.current_cell]
+                    raw_values_list.append(spot_counts)
+
+                for f in self.wsi.manual_rois:
+                    manual_counts = f['Main_Cell_Types'][self.current_cell]
+                    raw_values_list.append(manual_counts)
 
         elif color_type == 'max_cell':
-            # iterating through current ftus
-            for f in self.wsi.ftus:
-                for g in self.wsi.ftus[f]:
-                    all_cell_type_counts = [np.argmax(list(i.values())) for i in g['main_counts']]
-                    raw_values_list.extend([float(i) for i in np.unique(all_cell_type_counts)])
+
+            if not self.run_type=='dsa':
+                # iterating through current ftus
+                for f in self.wsi.ftus:
+                    for g in self.wsi.ftus[f]:
+                        all_cell_type_counts = [np.argmax(list(i.values())) for i in g['main_counts']]
+                        raw_values_list.extend([float(i) for i in np.unique(all_cell_type_counts)])
+            else:
+                # Iterating through current ftus
+                for f in self.wsi.ftu_props:
+                    for g in self.wsi.ftu_props[f]:
+                        all_cell_type_counts = float(np.argmax(list(g['Main_Cell_Types'].values())))
+                        raw_values_list.append(all_cell_type_counts)
 
         elif color_type == 'cluster':
             # iterating through current ftus
-            for f in self.wsi.ftus:
-                for g in self.wsi.ftus[f]:
-                    if 'Cluster' in g:
-                        cluster_label = g['Cluster']
-                        raw_values_list.extend([float(i) for i in cluster_label])
-            
+            if not self.run_type=='dsa':
+                for f in self.wsi.ftus:
+                    for g in self.wsi.ftus[f]:
+                        if 'Cluster' in g:
+                            cluster_label = g['Cluster']
+                            raw_values_list.extend([float(i) for i in cluster_label])
+            else:
+                for f in self.wsi.ftu_props:
+                    for g in self.wsi.ftu_props[f]:
+                        if 'Cluster' in g:
+                            cluster_label = g['Cluster']
+                            raw_values_list.append(cluster_label)
         else:
             # For specific morphometrics
-            for f in self.wsi.ftus:
-                for g in self.wsi.ftus[f]:
-                    if color_type in g:
-                        morpho_value = g[color_type]
-                        raw_values_list.extend([float(i) for i in morpho_value if float(i)>0])
-            
-        raw_values_list = np.unique(raw_values_list)
-        #print(f'raw values list: {raw_values_list}')
+            if not self.run_type=='dsa':
+                for f in self.wsi.ftus:
+                    for g in self.wsi.ftus[f]:
+                        if color_type in g:
+                            morpho_value = g[color_type]
+                            raw_values_list.extend([float(i) for i in morpho_value if float(i)>0])
+            else:
+                for f in self.wsi.ftu_props:
+                    for g in self.wsi.ftu_props[f]:
+                        if color_type in g:
+                            morpho_value = g[color_type]
+                            raw_values_list.append(morpho_value)
 
+        raw_values_list = np.unique(raw_values_list)
+        
         # Converting to RGB
         if max(raw_values_list)<=1:
             rgb_values = np.uint8(255*self.color_map(np.uint8(255*raw_values_list)))[:,0:3]
@@ -887,6 +1053,7 @@ class SlideHeatVis:
                 self.current_cell = 'max'
 
                 cell_types = list(self.wsi.geojson_ftus['features'][0]['properties']['Main_Cell_Types'].keys())
+                print(cell_types)
                 color_bar = dlx.categorical_colorbar(categories = cell_types, colorscale = list(self.hex_color_key.values()),width=600,height=10,position='bottomleft',id=f'colorbar{random.randint(0,100)}')
             
             elif cell_val == 'Morphometrics Clusters':
@@ -913,57 +1080,112 @@ class SlideHeatVis:
             print(f'FTU path in update_cell: {self.wsi.ftu_path}')
             """
             # Changing fill and fill-opacity properties for structures and adding that as a property
-            
-            map_dict = {
-                'url':self.wsi.image_url,
-                'FTUs':{
-                    struct : {
-                        'geojson':{'type':'FeatureCollection','features':[i for i in self.wsi.geojson_ftus['features'] if i['properties']['structure']==struct]},
-                        'id':{'type':'ftu-bounds','index':self.wsi.ftu_names.index(struct)},
-                        'color':'',
-                        'hover_color':''
+
+            if  not self.run_type == 'dsa':
+                map_dict = {
+                    'url':self.wsi.image_url,
+                    'FTUs':{
+                        struct : {
+                            'geojson':{'type':'FeatureCollection','features':[i for i in self.wsi.geojson_ftus['features'] if i['properties']['structure']==struct]},
+                            'id':{'type':'ftu-bounds','index':self.wsi.ftu_names.index(struct)},
+                            'color':'',
+                            'hover_color':''
+                        }
+                        for struct in self.wsi.ftu_names
                     }
-                    for struct in self.wsi.ftu_names
                 }
-            }
 
-            spot_dict = {
-                'geojson':self.wsi.geojson_spots,
-                'id': {'type':'ftu-bounds','index':len(self.wsi.ftu_names)},
-                'color': '#dffa00',
-                'hover_color':'#9caf00'
-            }
+                spot_dict = {
+                    'geojson':self.wsi.geojson_spots,
+                    'id': {'type':'ftu-bounds','index':len(self.wsi.ftu_names)},
+                    'color': '#dffa00',
+                    'hover_color':'#9caf00'
+                }
 
-            new_children = [
-                dl.Overlay(
-                    dl.LayerGroup(
-                        dl.GeoJSON(data = map_dict['FTUs'][struct]['geojson'], id = map_dict['FTUs'][struct]['id'], options = dict(style=self.ftu_style_handle),
-                                hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = vis_val, ftu_colors=self.ftu_colors),
-                                hoverStyle = arrow_function(dict(weight=5, color = map_dict['FTUs'][struct]['hover_color'], dashArray = '')))),
-                        name = struct, checked = True, id = self.wsi.slide_info_dict['key_name']+'_'+struct)
-                for struct in map_dict['FTUs']
-                ]
-            
-            new_children += [
-                dl.Overlay(
-                    dl.LayerGroup(
-                        dl.GeoJSON(data = spot_dict['geojson'], id = spot_dict['id'], options = dict(style = self.ftu_style_handle),
-                                hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = vis_val, ftu_colors= self.ftu_colors),
-                                hoverStyle = arrow_function(dict(weight=5, color = spot_dict['hover_color'], dashArray = '')))),
-                        name = 'Spots', checked = False, id = self.wsi.slide_info_dict['key_name']+'_Spots')
-                ]
-            
-            for m_idx,man in enumerate(self.wsi.manual_rois):
-                new_children.append(
+                new_children = [
                     dl.Overlay(
                         dl.LayerGroup(
-                            dl.GeoJSON(data = man['geojson'], id = man['id'], options = dict(style = self.ftu_style_handle),
+                            dl.GeoJSON(data = map_dict['FTUs'][struct]['geojson'], id = map_dict['FTUs'][struct]['id'], options = dict(style=self.ftu_style_handle),
+                                    hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = vis_val, ftu_colors=self.ftu_colors),
+                                    hoverStyle = arrow_function(dict(weight=5, color = map_dict['FTUs'][struct]['hover_color'], dashArray = '')))),
+                            name = struct, checked = True, id = self.wsi.slide_info_dict['key_name']+'_'+struct)
+                    for struct in map_dict['FTUs']
+                    ]
+                
+                new_children += [
+                    dl.Overlay(
+                        dl.LayerGroup(
+                            dl.GeoJSON(data = spot_dict['geojson'], id = spot_dict['id'], options = dict(style = self.ftu_style_handle),
+                                    hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = vis_val, ftu_colors= self.ftu_colors),
+                                    hoverStyle = arrow_function(dict(weight=5, color = spot_dict['hover_color'], dashArray = '')))),
+                            name = 'Spots', checked = False, id = self.wsi.slide_info_dict['key_name']+'_Spots')
+                    ]
+                
+                for m_idx,man in enumerate(self.wsi.manual_rois):
+                    new_children.append(
+                        dl.Overlay(
+                            dl.LayerGroup(
+                                dl.GeoJSON(data = man['geojson'], id = man['id'], options = dict(style = self.ftu_style_handle),
+                                        hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = vis_val, ftu_colors = self.ftu_colors),
+                                        hoverStyle = arrow_function(dict(weight=5, color = man['hover_color'], dashArray = '')))),
+                                name = f'Manual ROI {m_idx}', checked = True, id = self.wsi.slide_info_dict['key_name']+f'_manual_roi{m_idx}'
+                            )
+                        )
+                
+            else:
+
+                map_dict = {
+                    'url':self.wsi.tile_url,
+                    'FTUs':{
+                        struct: {
+                            'geojson':{'type':'FeatureCollection','features':[i for i in self.wsi.geojson_ftus['features'] if i['properties']['name']==struct]},
+                            'id': {'type':'ftu-bounds','index':self.wsi.ftu_names.index(struct)},
+                            'color':'',
+                            'hover_color':''
+                        }
+                        for struct in self.wsi.ftu_names
+                    }
+                }
+
+                spot_dict = {
+                    'geojson':self.wsi.geojson_spots,
+                    'id':{'type':'ftu-bounds','index':len(self.wsi.ftu_names)},
+                    'color':'#dffa00',
+                    'hover_color':'#9caf00'
+                }
+
+                new_children = [
+                    dl.Overlay(
+                        dl.LayerGroup(
+                            dl.GeoJSON(data = map_dict['FTUs'][struct]['geojson'], id = map_dict['FTUs'][struct]['id'], options = dict(style=self.ftu_style_handle),
+                                       hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity=vis_val, ftu_colors = self.ftu_colors),
+                                       hoverStyle = arrow_function(dict(weight=5, color = map_dict['FTUs'][struct]['hover_color'],dashArray='')))
+                        ), name = struct, checked = True, id = self.wsi.item_id+'_'+struct
+                    )
+                    for struct in map_dict['FTUs']
+                ]
+                new_children += [
+                    dl.Overlay(
+                        dl.LayerGroup(
+                            dl.GeoJSON(data = spot_dict['geojson'], id = spot_dict['id'], options = dict(style = self.ftu_style_handle),
                                        hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = vis_val, ftu_colors = self.ftu_colors),
-                                       hoverStyle = arrow_function(dict(weight=5, color = man['hover_color'], dashArray = '')))),
-                            name = f'Manual ROI {m_idx}', checked = True, id = self.wsi.slide_info_dict['key_name']+f'_manual_roi{m_idx}'
+                                       hoverStyle = arrow_function(dict(weight=5,color=spot_dict['hover_color'],dashArray='')))
+                        ),name = 'Spots', checked = False, id = self.wsi.item_id+'_Spots'
+                    )
+                ]
+
+                for m_idx,man in enumerate(self.wsi.manual_rois):
+                    new_children.append(
+                        dl.Overlay(
+                            dl.LayerGroup(
+                                dl.GeoJSON(data = man['geojson'], id = man['id'], options = dict(style = self.ftu_style_handle),
+                                           hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = vis_val, ftu_colors = self.ftu_colors),
+                                           hoverStyle = arrow_function(dict(weight=5,color=man['hover_color'],dashArray='')))
+                            ), name = f'Manual ROI {m_idx}', checked = True, id = self.wsi.item_id+f'_manual_roi{m_idx}'
                         )
                     )
-                
+
+
             self.current_overlays = new_children
                         
             return new_children, color_bar
@@ -1195,23 +1417,147 @@ class SlideHeatVis:
     def ingest_wsi(self,slide_name):
 
         print(f'Slide selected: {slide_name}')
+        if not self.run_type == 'dsa':
+            new_slide_key_name = self.slide_info_dict[slide_name]['key_name']
+            old_slide_key_name = self.wsi.slide_info_dict['key_name']
 
-        new_slide_key_name = self.slide_info_dict[slide_name]['key_name']
-        old_slide_key_name = self.wsi.slide_info_dict['key_name']
+            new_dataset_key_name = self.dataset_handler.get_dataset(self.dataset_handler.get_slide_dataset(slide_name))['key_name']
+            old_dataset_key_name = self.dataset_handler.get_dataset(self.dataset_handler.get_slide_dataset(self.wsi.slide_name))['key_name']
 
-        new_dataset_key_name = self.dataset_handler.get_dataset(self.dataset_handler.get_slide_dataset(slide_name))['key_name']
-        old_dataset_key_name = self.dataset_handler.get_dataset(self.dataset_handler.get_slide_dataset(self.wsi.slide_name))['key_name']
+            new_url = self.wsi.image_url.replace(old_slide_key_name,new_slide_key_name).replace(old_dataset_key_name,new_dataset_key_name)
 
-        new_url = self.wsi.image_url.replace(old_slide_key_name,new_slide_key_name).replace(old_dataset_key_name,new_dataset_key_name)
+            old_ftu_path = self.wsi.ftu_path
+            old_spot_path = self.wsi.spot_path
 
-        old_ftu_path = self.wsi.ftu_path
-        old_spot_path = self.wsi.spot_path
+            new_ext = slide_name.split('.')[-1]
 
-        new_ext = slide_name.split('.')[-1]
+            new_ftu_path = old_ftu_path.replace(self.wsi.slide_name.replace('.'+self.wsi.slide_ext,''),slide_name.replace('.'+new_ext,''))
+            new_spot_path = old_spot_path.replace(self.wsi.slide_name.replace('.'+self.wsi.slide_ext,''),slide_name.replace('.'+new_ext,''))
+            new_slide = WholeSlide(new_url,slide_name,self.slide_info_dict[slide_name],new_ftu_path,new_spot_path)
 
-        new_ftu_path = old_ftu_path.replace(self.wsi.slide_name.replace('.'+self.wsi.slide_ext,''),slide_name.replace('.'+new_ext,''))
-        new_spot_path = old_spot_path.replace(self.wsi.slide_name.replace('.'+self.wsi.slide_ext,''),slide_name.replace('.'+new_ext,''))
-        new_slide = WholeSlide(new_url,slide_name,self.slide_info_dict[slide_name],new_ftu_path,new_spot_path)
+            map_dict = {
+                'url':self.wsi.image_url,
+                'FTUs':{
+                    struct : {
+                        'geojson':{'type':'FeatureCollection','features':[i for i in self.wsi.geojson_ftus['features'] if i['properties']['structure']==struct]},
+                        'id':{'type':'ftu-bounds','index':list(self.wsi.ftus.keys()).index(struct)},
+                        'color':'',
+                        'hover_color':''
+                    }
+                    for struct in self.wsi.ftu_names
+                }
+            }
+
+            spot_dict = {
+                'geojson':self.wsi.geojson_spots,
+                'id': {'type':'ftu-bounds','index':len(list(self.wsi.ftus.keys()))},
+                'color': '#dffa00',
+                'hover_color':'#9caf00'
+            }
+            new_children = [
+                dl.Overlay(
+                    dl.LayerGroup(
+                        dl.GeoJSON(data = map_dict['FTUs'][struct]['geojson'], id = map_dict['FTUs'][struct]['id'], options = dict(style = self.ftu_style_handle),
+                                    hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = self.cell_vis_val),
+                                    hoverStyle = arrow_function(dict(weight=5, color = map_dict['FTUs'][struct]['hover_color'], dashArray = '')))),
+                        name = struct, checked = True, id = self.wsi.slide_info_dict['key_name']+'_'+struct)
+                for struct in map_dict['FTUs']
+                ]
+            
+            new_children += [
+                dl.Overlay(
+                    dl.LayerGroup(
+                        dl.GeoJSON(data = spot_dict['geojson'], id = spot_dict['id'], options = dict(style = self.ftu_style_handle),
+                                hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = self.cell_vis_val),
+                                hoverStyle = arrow_function(dict(weight=5, color = spot_dict['hover_color'], dashArray = '')))),
+                        name = 'Spots', checked = False, id = self.wsi.slide_info_dict['key_name']+'_Spots')
+                ]
+
+            for m_idx,man in enumerate(self.wsi.manual_rois):
+                new_children.append(
+                    dl.Overlay(
+                        dl.LayerGroup(
+                            dl.GeoJSON(data = man['geojson'], id = man['id'], options = dict(style = self.ftu_style_handle),
+                                    hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = self.cell_vis_val, ftu_colors = self.ftu_colors),
+                                    hoverStyle = arrow_function(dict(weight=5, color = man['hover_color'], dashArray = '')))),
+                            name = f'Manual ROI {m_idx}', checked = True, id = self.wsi.slide_info_dict['key_name']+f'_manual_roi{m_idx}'
+                        )
+                    )
+
+            new_url = self.wsi.image_url
+
+            center_point = [(self.wsi.slide_bounds[1]+self.wsi.slide_bounds[3])/2,(self.wsi.slide_bounds[0]+self.wsi.slide_bounds[2])/2]
+
+        else:
+            # Find folder containing this slide
+            for d in self.dataset_handler.slide_datasets:
+                d_slides = [i['name'] for i in self.dataset_handler.slide_datasets[d]['Slides']]
+                if slide_name in d_slides:
+                    # Getting slide item id
+                    slide_id = self.dataset_handler.slide_datasets[d]['Slides'][d_slides.index(slide_name)]['_id']
+                    # Getting all the mapping info
+                    map_bounds, base_dims, image_dims, tile_size, geojson_annotations, tile_url = self.dataset_handler.get_resource_map_data(slide_id)
+
+            new_slide = DSASlide(slide_name,slide_id,tile_url,geojson_annotations,image_dims,base_dims)
+
+            # map_dict contains ftu geojson information
+            map_dict = {
+                'url': tile_url,
+                'FTUs':{
+                    struct: {
+                        'geojson':{'type':'FeatureCollection','features':[i for i in new_slide.geojson_ftus['features'] if i['properties']['name']==struct]},
+                        'id':{'type':'ftu-bounds','index':new_slide.ftu_names.index(struct)},
+                        'color':'',
+                        'hover_color':''
+                    }
+                    for struct in self.wsi.ftu_names
+                }
+            }
+
+            # spot_dict contains spot geojson information
+            spot_dict = {
+                'geojson': new_slide.geojson_spots,
+                'id':{'type':'ftu-bounds','index':len(new_slide.ftu_names)},
+                'color': '#dffa00',
+                'hover_color':'#9caf00'
+            }
+
+            new_children = [
+                dl.Overlay(
+                    dl.LayerGroup(
+                        dl.GeoJSON(data = map_dict['FTUs'][struct]['geojson'], id = map_dict['FTUs'][struct]['id'], options = dict(style = self.ftu_style_handle),
+                                   hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = self.cell_vis_val),
+                                   hoverStyle = arrow_function(dict(weight=5, color = map_dict['FTUs'][struct]['hover_color'], dashArray = '')))
+                    ), name = struct, checked = True, id = new_slide.item_id+'_'+struct
+                )
+                for struct in map_dict['FTUs']
+            ]
+
+            new_children += [
+                dl.Overlay(
+                    dl.LayerGroup(
+                        dl.GeoJSON(data = spot_dict['geojson'], id = spot_dict['id'], options = dict(style = self.ftu_style_handle),
+                                   hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = self.cell_vis_val),
+                                   hoverStyle = arrow_function(dict(weight=5, color = spot_dict['hover_color'], dashArray='')))),
+                    name = 'Spots', checked = False, id = new_slide.item_id+'_Spots'
+                )
+            ]
+
+            # Now iterating through manual ROIs
+            for m_idx, man in enumerate(new_slide.manual_rois):
+                new_children.append(
+                    dl.Overlay(
+                        dl.LayerGroup(
+                            dl.GeoJSON(data = man['geojson'], id = man['id'], options = dict(style = self.ftu_style_handle),
+                                       hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = self.cell_vis_val, ftu_colors = self.ftu_colors),
+                                       hoverStyle = arrow_function(dict(weight=5,color=man['hover_color'], dashArray='')))
+                        ),
+                        name = f'Manual ROI {m_idx}', checked = True, id = new_slide.item_id+f'_manual_roi{m_idx}'
+                    )
+                )
+
+            new_url = tile_url
+            center_point = [0.5*(map_bounds[0][0]+map_bounds[1][0]),0.5*(map_bounds[0][1]+map_bounds[1][1])]
 
         self.wsi = new_slide
 
@@ -1224,62 +1570,8 @@ class SlideHeatVis:
         else:
             self.update_hex_color_key(self.current_cell)
 
-        map_dict = {
-            'url':self.wsi.image_url,
-            'FTUs':{
-                struct : {
-                    'geojson':{'type':'FeatureCollection','features':[i for i in self.wsi.geojson_ftus['features'] if i['properties']['structure']==struct]},
-                    'id':{'type':'ftu-bounds','index':list(self.wsi.ftus.keys()).index(struct)},
-                    'color':'',
-                    'hover_color':''
-                }
-                for struct in self.wsi.ftu_names
-            }
-        }
-
         self.current_ftus = self.wsi.ftu_names
         self.current_ftu_layers = self.wsi.ftu_names
-
-        spot_dict = {
-            'geojson':self.wsi.geojson_spots,
-            'id': {'type':'ftu-bounds','index':len(list(self.wsi.ftus.keys()))},
-            'color': '#dffa00',
-            'hover_color':'#9caf00'
-        }
-
-        new_children = [
-            dl.Overlay(
-                dl.LayerGroup(
-                    dl.GeoJSON(data = map_dict['FTUs'][struct]['geojson'], id = map_dict['FTUs'][struct]['id'], options = dict(style = self.ftu_style_handle),
-                                hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = self.cell_vis_val),
-                                hoverStyle = arrow_function(dict(weight=5, color = map_dict['FTUs'][struct]['hover_color'], dashArray = '')))),
-                    name = struct, checked = True, id = self.wsi.slide_info_dict['key_name']+'_'+struct)
-            for struct in map_dict['FTUs']
-            ]
-        
-        new_children += [
-            dl.Overlay(
-                dl.LayerGroup(
-                    dl.GeoJSON(data = spot_dict['geojson'], id = spot_dict['id'], options = dict(style = self.ftu_style_handle),
-                            hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = self.cell_vis_val),
-                            hoverStyle = arrow_function(dict(weight=5, color = spot_dict['hover_color'], dashArray = '')))),
-                    name = 'Spots', checked = False, id = self.wsi.slide_info_dict['key_name']+'_Spots')
-            ]
-
-        for m_idx,man in enumerate(self.wsi.manual_rois):
-            new_children.append(
-                dl.Overlay(
-                    dl.LayersGroup(
-                        dl.GeoJSON(data = man['geojson'], id = man['id'], options = dict(style = self.ftu_style_handle),
-                                   hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = self.cell_vis_val, ftu_colors = self.ftu_colors),
-                                   hoverStyle = arrow_function(dict(weight=5, color = man['hover_color'], dashArray = '')))),
-                        name = f'Manual ROI {m_idx}', checked = True, id = self.wsi.slide_info_dict['key_name']+f'_manual_roi{m_idx}'
-                    )
-                )
-
-        new_url = self.wsi.image_url
-
-        center_point = [(self.wsi.slide_bounds[1]+self.wsi.slide_bounds[3])/2,(self.wsi.slide_bounds[0]+self.wsi.slide_bounds[2])/2]
 
         # Adding the layers to be a property for the edit_control callback
         self.current_overlays = new_children
@@ -1287,7 +1579,7 @@ class SlideHeatVis:
         # Adding fresh edit-control to the outputs
         new_edit_control = dl.EditControl(id={'type':'edit_control','index':np.random.randint(0,1000)})
 
-        return new_url, new_children, center_point, new_edit_control
+        return new_url, new_children, center_point, map_bounds, tile_size, new_edit_control
 
     def update_graph(self,ftu,plot,label):
         
@@ -1353,49 +1645,58 @@ class SlideHeatVis:
             max_x = int(s['Max_x_coord'])
             max_y = int(s['Max_y_coord'])
 
-            # Normalize coordinates to be within slide bounds
-            # width, height
-            wsi_dims = self.slide_info_dict[s['image_id']+'.svs']['wsi_dims']
-            # min_long, min lat, max_long, max lat
-            slide_bounds = self.slide_info_dict[s['image_id']+'.svs']['bounds']
+            if not self.run_type == 'dsa':
+                # Normalize coordinates to be within slide bounds
+                # width, height
+                wsi_dims = self.slide_info_dict[s['image_id']+'.svs']['wsi_dims']
+                # min_long, min lat, max_long, max lat
+                slide_bounds = self.slide_info_dict[s['image_id']+'.svs']['bounds']
 
-            min_slide_x = slide_bounds[0]+(slide_bounds[2]-slide_bounds[0])*(min_x/wsi_dims[0])
-            min_slide_y = slide_bounds[1]+(slide_bounds[3]-slide_bounds[1])*(min_y/wsi_dims[1])
-            max_slide_x = slide_bounds[0]+(slide_bounds[2]-slide_bounds[0])*(max_x/wsi_dims[0])
-            max_slide_y = slide_bounds[1]+(slide_bounds[3]-slide_bounds[1])*(max_y/wsi_dims[1])
-            #test_merc = mercantile.bounding_tile(max_slide_x,min_slide_y,min_slide_x,max_slide_y)
-            test_merc = mercantile.tile((max_slide_x+min_slide_x)/2,(max_slide_y+min_slide_y)/2,17)
+                min_slide_x = slide_bounds[0]+(slide_bounds[2]-slide_bounds[0])*(min_x/wsi_dims[0])
+                min_slide_y = slide_bounds[1]+(slide_bounds[3]-slide_bounds[1])*(min_y/wsi_dims[1])
+                max_slide_x = slide_bounds[0]+(slide_bounds[2]-slide_bounds[0])*(max_x/wsi_dims[0])
+                max_slide_y = slide_bounds[1]+(slide_bounds[3]-slide_bounds[1])*(max_y/wsi_dims[1])
+                #test_merc = mercantile.bounding_tile(max_slide_x,min_slide_y,min_slide_x,max_slide_y)
+                test_merc = mercantile.tile((max_slide_x+min_slide_x)/2,(max_slide_y+min_slide_y)/2,17)
 
-            # Use requests to pull out image data from URL
-            dataset_name = self.dataset_handler.get_slide_dataset(s['image_id']+'.svs')
-            dataset = self.dataset_handler.get_dataset(dataset_name)
-            
-            slide_key_name = self.slide_info_dict[s['image_id']+'.svs']['key_name']
-            merc_tiles = mercantile.neighbors(test_merc)
-            tile_mask = np.zeros((3*256,3*256,3))
-            for t in merc_tiles:
-                tile_x, tile_y, tile_z = t.x, t.y, t.z
+                # Use requests to pull out image data from URL
+                dataset_name = self.dataset_handler.get_slide_dataset(s['image_id']+'.svs')
+                dataset = self.dataset_handler.get_dataset(dataset_name)
+                
+                slide_key_name = self.slide_info_dict[s['image_id']+'.svs']['key_name']
+                merc_tiles = mercantile.neighbors(test_merc)
+                tile_mask = np.zeros((3*256,3*256,3))
+                for t in merc_tiles:
+                    tile_x, tile_y, tile_z = t.x, t.y, t.z
 
-                url = f'http://192.168.86.39:5000/rgb/{dataset["key_name"]}/{slide_key_name}/{tile_z}/{tile_x}/{tile_y}.png?r=B04&r_range=[46,168]&g=B03&g_range=[46,168]&b=B02&b_range=[46,168]&'
+                    url = f'http://192.168.86.39:5000/rgb/{dataset["key_name"]}/{slide_key_name}/{tile_z}/{tile_x}/{tile_y}.png?r=B04&r_range=[46,168]&g=B03&g_range=[46,168]&b=B02&b_range=[46,168]&'
+
+                    response = requests.get(url,verify=False,timeout=10)
+                    img = Image.open(BytesIO(response.content))
+
+                    # It says that there's no guarantee of the order so have to figure something out for that
+                    tile_x_diff = tile_x-test_merc.x
+                    tile_y_diff = tile_y-test_merc.y
+                    tile_mask[256*(1+tile_y_diff):256+256*(1+tile_y_diff),256*(1+tile_x_diff):256+256*(1+tile_x_diff),:] = np.uint8(np.array(img))
+                
+                # Now grabbing the middle image
+                url = f'http://192.168.86.39:5000/rgb/{dataset["key_name"]}/{slide_key_name}/{test_merc.z}/{test_merc.x}/{test_merc.y}.png?r=B04&r_range=[46,168]&g=B03&g_range=[46,168]&b=B02&b_range=[46,168]&'
 
                 response = requests.get(url,verify=False,timeout=10)
                 img = Image.open(BytesIO(response.content))
+                
+                tile_mask[256:512,256:512,:] += np.uint8(np.array(img))
 
-                # It says that there's no guarantee of the order so have to figure something out for that
-                tile_x_diff = tile_x-test_merc.x
-                tile_y_diff = tile_y-test_merc.y
-                tile_mask[256*(1+tile_y_diff):256+256*(1+tile_y_diff),256*(1+tile_x_diff):256+256*(1+tile_x_diff),:] = np.uint8(np.array(img))
-            
-            # Now grabbing the middle image
-            url = f'http://192.168.86.39:5000/rgb/{dataset["key_name"]}/{slide_key_name}/{test_merc.z}/{test_merc.x}/{test_merc.y}.png?r=B04&r_range=[46,168]&g=B03&g_range=[46,168]&b=B02&b_range=[46,168]&'
+                tile_mask = resize(tile_mask,output_shape=(512,512,3))
+                img_list.append(tile_mask)
 
-            response = requests.get(url,verify=False,timeout=10)
-            img = Image.open(BytesIO(response.content))
-            
-            tile_mask[256:512,256:512,:] += np.uint8(np.array(img))
+            else:
 
-            tile_mask = resize(tile_mask,output_shape=(512,512,3))
-            img_list.append(tile_mask)
+                # Pulling image region using provided coordinates
+                image_region = self.dataset_handler.get_image_region(self.wsi.item_id,[min_x,min_y,max_x,max_y])
+                print(f'image_region type: {type(image_region)}')
+                img_list.append(resize(np.array(image_region),output_shape=(512,512,3)))
+
 
         return img_list        
 
@@ -1952,7 +2253,9 @@ def app(*args):
         # Calculating center point for initial layout
         current_slide_bounds = slide_info_dict[slide_name]['bounds']
         center_point = [(current_slide_bounds[1]+current_slide_bounds[3])/2,(current_slide_bounds[0]+current_slide_bounds[2])/2]
-        
+        map_bounds = None
+        tile_size = 256
+
         if dataset_info_dict['ftu']['annotation_type']=='GeoJSON':
             map_dict = {
                 'url':wsi.image_url,
@@ -1993,7 +2296,7 @@ def app(*args):
         asct_b_table = pd.read_csv(dsa_url+f'item/{asct_b_table_id}/download?token={token}',skiprows=list(range(10)))
 
         print(f'first slide: {initial_collection_contents[0]["name"]}')
-        map_bounds, base_dims, image_dims, geojson_annotations, slide_url = dataset_handler.get_resource_map_data(resource=initial_collection_contents[0]['_id'])
+        map_bounds, base_dims, image_dims, tile_size, geojson_annotations, slide_url = dataset_handler.get_resource_map_data(resource=initial_collection_contents[0]['_id'])
         print(f'map_bounds: {map_bounds}')
         print(f'base_dims: {base_dims}')
         print(f'image_dims: {image_dims}')
@@ -2009,7 +2312,7 @@ def app(*args):
         slide_names = [i['name'] for i in initial_collection_contents if 'largeImage' in i]
         slide_info_dict = None
 
-        wsi = DSASlide(slide_name,slide_item_id,geojson_annotations,image_dims,base_dims)
+        wsi = DSASlide(slide_name,slide_item_id,slide_url,geojson_annotations,image_dims,base_dims)
         center_point = [0,0]
 
         map_dict = {
@@ -2036,7 +2339,7 @@ def app(*args):
 
     layout_handler = LayoutHandler()
     layout_handler.gen_initial_layout(slide_names)
-    layout_handler.gen_vis_layout(cell_names,center_point,map_dict,spot_dict)
+    layout_handler.gen_vis_layout(cell_names,center_point,map_dict,spot_dict,run_type,tile_size,map_bounds)
     layout_handler.gen_builder_layout(dataset_handler,run_type)
 
     download_handler = DownloadHandler(dataset_handler)

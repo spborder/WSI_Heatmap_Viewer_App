@@ -22,6 +22,9 @@ from geojson import Feature, dump
 import uuid
 import zipfile
 import shutil
+from PIL import Image
+from io import BytesIO
+import requests
 
 import plotly.express as px
 import plotly.graph_objects as go
@@ -76,7 +79,7 @@ class LayoutHandler:
 
         return info_button
 
-    def gen_vis_layout(self,cell_types, center_point, map_dict, spot_dict):
+    def gen_vis_layout(self,cell_types, center_point, map_dict, spot_dict, run_type, tile_size, map_bounds = None):
 
         # Main visualization layout, used in initialization and when switching to the viewer
 
@@ -110,6 +113,35 @@ class LayoutHandler:
                 name = 'Spots', checked = False, id = 'Spots')
         ]
 
+
+        map_children = [
+            dl.TileLayer(url = map_dict['url'], noWrap=True, tileSize = tile_size,id = 'slide-tile'),
+            dl.FeatureGroup(id='feature-group',
+                            children = [
+                                dl.EditControl(id = {'type':'edit_control','index':0},
+                                                draw = dict(line=False, circle = False, circlemarker=False))
+                            ]),
+            dl.LayerGroup(id='mini-label'),
+            html.Div(id='colorbar-div',children = [dl.Colorbar(id='map-colorbar')]),
+            dl.LayersControl(id='layer-control',children = self.initial_overlays)
+        ]
+
+        if not run_type=='dsa':
+            map_layer = dl.Map(
+                center = center_point, zoom = 12, minZoom = 11,
+                children = map_children,
+                style = {'width':'100%','height':'80vh','margin':'auto','display':'inline-block'},
+                id = 'slide-map'
+            )
+        else:
+            map_layer = dl.Map(
+                center = center_point, zoom = 2, minZoom = 0, maxZoom = 7, crs='Simple',bounds = map_bounds,
+                style = {'width':'100%','height':'80vh','margin':'auto','display':'inline-block'},
+                id = 'slide-map',
+                children = map_children
+            )
+
+
         wsi_view = dbc.Card([
             dbc.CardHeader(
                 children = [
@@ -118,23 +150,7 @@ class LayoutHandler:
             ]),
             dbc.Row([
                 html.Div(
-                    dl.Map(center=center_point, zoom = 12, minZoom=11,
-                           children = [
-                                dl.TileLayer(url = map_dict['url'],id = 'slide-tile'),
-                                dl.FeatureGroup(id='feature-group',
-                                                children = [
-                                                    dl.EditControl(id={'type':'edit_control','index':0},
-                                                                   draw=dict(line=False,circle=False,circlemarker=False)
-                                                                   )
-                                                            ]
-                                                ),
-                                dl.LayerGroup(id='mini-label'),
-                                html.Div(id='colorbar-div',children=[dl.Colorbar(id='map-colorbar')]),
-                                dl.LayersControl(id='layer-control',children = self.initial_overlays)
-                           ],
-                           style = {'width':'100%','height':'80vh','margin':'auto','display':'inline-block'},
-                           id = 'slide-map'
-                    )
+                    map_layer
                 )
             ]),
             dbc.Row([html.Div(id='current-hover')])
@@ -1022,7 +1038,7 @@ class GirderHandler:
         user_token = self.get_token()
         tile_url = self.gc.urlBase+f'item/{item_id}'+'/tiles/zxy/{z}/{x}/{y}?token='+user_token
 
-        return map_bounds, base_dims, image_dims, geojson_annotations, tile_url
+        return map_bounds, base_dims, image_dims, tile_dims[0],geojson_annotations, tile_url
 
     def get_cli_list(self):
         # Get a list of possible CLIs available for current user
@@ -1072,6 +1088,12 @@ class GirderHandler:
                 elif type(item_metadata[0])==int or type(item_metadata[0])==float:
                     self.slide_datasets[f]['Metadata'][m] = sum(item_metadata)
 
+    def get_image_region(self,item_id,coords_list):
+
+        # Pulling specific region from an image using provided coordinates
+        image_region = Image.open(BytesIO(requests.get(self.gc.urlBase+f'/item/{item_id}/tiles/region?token={self.user_token}&left={coords_list[0]}&top={coords_list[1]}&right={coords_list[2]}&bottom={coords_list[3]}').content))
+
+        return image_region
     """
     def get_cli_input_list(self,cli_id):
         #TODO: figure out how to extract list of expected inputs & types for a given CLI from XML

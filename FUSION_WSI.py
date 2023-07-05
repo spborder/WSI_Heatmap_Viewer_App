@@ -19,15 +19,19 @@ class DSASlide:
     def __init__(self,
                  slide_name,
                  item_id,
+                 tile_url,
                  geojson_annotations,
                  image_dims,
-                 base_dims):
+                 base_dims,
+                 manual_rois = []):
 
         self.slide_name = slide_name
         self.item_id = item_id
+        self.tile_url = tile_url
         self.geojson_annotations = geojson_annotations
         self.image_dims = image_dims
         self.base_dims = base_dims
+        self.manual_rois = manual_rois
 
         # Initializing conversion scales
         self.x_scale = self.image_dims[0]/self.base_dims[0]
@@ -56,8 +60,6 @@ class DSASlide:
 
         self.geojson_spots = {'type':'FeatureCollection','features':[i for i in self.geojson_annotations['features'] if i['properties']['name']=='Spots']}
 
-
-
     def find_intersecting_spots(self,box_poly):
 
         # Finging intersecting spots
@@ -70,7 +72,7 @@ class DSASlide:
 
         return intersecting_spot_props
 
-    def find_intersecting_spots(self, box_poly, ftu: str):
+    def find_intersecting_ftu(self, box_poly, ftu: str):
 
         if ftu in self.ftu_names:
             
