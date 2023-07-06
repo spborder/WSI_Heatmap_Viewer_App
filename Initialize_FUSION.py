@@ -79,7 +79,7 @@ class LayoutHandler:
 
         return info_button
 
-    def gen_vis_layout(self,cell_types, center_point, map_dict, spot_dict, run_type, tile_size, map_bounds = None):
+    def gen_vis_layout(self,cell_types, center_point, map_dict, spot_dict, run_type, tile_size, map_bounds = None, cli_list = None):
 
         # Main visualization layout, used in initialization and when switching to the viewer
 
@@ -140,7 +140,6 @@ class LayoutHandler:
                 id = 'slide-map',
                 children = map_children
             )
-
 
         wsi_view = dbc.Card([
             dbc.CardHeader(
@@ -403,6 +402,46 @@ class LayoutHandler:
                 ])
             ])
         ])
+
+        # Test CLI tab
+        if not run_type == 'dsa':
+            tool_tabs = [
+                dbc.Tab(roi_pie, label = "Cell Composition"),
+                dbc.Tab(cell_card,label = "Cell Card"),
+                dbc.Tab(cluster_card,label = 'Morphological Clustering'),
+                dbc.Tab(extract_card,label = 'Download Data')
+            ]
+        else:
+            # Accessing analyses/cli plugins for applying to data in FUSION
+            available_clis = cli_list
+            cli_tab = dbc.Card([
+                dbc.CardBody([
+                    dbc.Row([
+                        dbc.Label('Select CLI to run:',html_for='cli-drop'),
+                        html.B(),
+                        dcc.Dropdown(available_clis,id='cli-drop')
+                    ]),
+                    html.Hr(),
+                    dbc.Row([
+                        dbc.Label('CLI Description:',html_for='cli-descrip'),
+                        html.Div(id='cli-descrip')
+                    ]),
+                    dbc.Row([
+                        dbc.Button('Run Job!',color='primary',id='cli-run',disabled=True)
+                    ]),
+                    dbc.Row([
+                        dcc.Loading(html.Div(id='cli-results'))
+                    ])
+                ])
+            ])
+
+            tool_tabs = [
+                dbc.Tab(roi_pie, label = "Cell Composition"),
+                dbc.Tab(cell_card,label = "Cell Card"),
+                dbc.Tab(cluster_card,label = 'Morphological Clustering'),
+                dbc.Tab(extract_card,label = 'Download Data'),
+                dbc.Tab(cli_tab,label = 'Run Analyses')
+            ]
         
 
         mini_options = ['All Main Cell Types','Cell States for Current Cell Type','None']
@@ -453,13 +492,7 @@ class LayoutHandler:
                                 ])
                             ]),
                             dbc.Row([
-                                dbc.Tabs([
-                                    #dbc.Tab(thumbnail_select, label = "Thumbnail ROI"),
-                                    dbc.Tab(roi_pie, label = "Cell Composition"),
-                                    dbc.Tab(cell_card,label = "Cell Card"),
-                                    dbc.Tab(cluster_card,label = 'Morphological Clustering'),
-                                    dbc.Tab(extract_card,label = 'Download Data')
-                                ])
+                                dbc.Tabs(tool_tabs)
                             ])
                         ])
                     ])
@@ -1045,6 +1078,8 @@ class GirderHandler:
         #TODO: Find out the format of what is returned from this and reorder
 
         cli = self.gc.get('/slicer_cli_web/cli')
+        self.cli_dict_list = cli
+
         return cli
 
     def initialize_folder_structure(self,path):

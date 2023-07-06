@@ -32,7 +32,6 @@ from skimage.transform import resize
 import geojson
 import random
 
-import mercantile
 import requests
 
 import plotly.express as px
@@ -81,8 +80,6 @@ class SlideHeatVis:
         self.current_overlays = self.layout_handler.initial_overlays
 
         self.download_handler = download_handler
-        #self.cache = diskcache.Cache("./cache")
-        #self.long_callback_manager = DiskcacheLongCallbackManager(self.cache)
 
         # Setting some app-related things
         self.app = app
@@ -394,6 +391,17 @@ class SlideHeatVis:
             Output({'type':'download-data','index':MATCH},'data'),
             prevent_initial_call = True
         )(self.download_data)
+
+        # Callbacks for CLI application
+        self.app.callback(
+            [Input('cli-drop','value'),
+             Input('cli-run','n_clicks')],
+            [Output('cli-descrip','children'),
+             Output('cli-run','disabled'),
+             Output('cli-results','children')],
+             prevent_initial_call = True
+        )(self.run_analysis)
+
         
     def builder_callbacks(self):
 
@@ -1694,7 +1702,6 @@ class SlideHeatVis:
 
                 # Pulling image region using provided coordinates
                 image_region = self.dataset_handler.get_image_region(self.wsi.item_id,[min_x,min_y,max_x,max_y])
-                print(f'image_region type: {type(image_region)}')
                 img_list.append(resize(np.array(image_region),output_shape=(512,512,3)))
 
 
@@ -2121,6 +2128,29 @@ class SlideHeatVis:
         else:
             raise exceptions.PreventUpdate
 
+    def run_analysis(self,cli_name,cli_butt):
+
+        cli_dict = [i for i in self.dataset_handler.cli_dict_list if i['name']==cli_name][0]
+        cli_description = cli_dict['description']
+        cli_id = cli_dict['_id']
+        cli_butt_disable = False
+
+        # Printing xml to find inputs
+        cli_xml = self.dataset_handler.gc.get(f'slicer_cli_web/cli/{cli_id}')['xml']
+        print('cli XML')
+        print(cli_xml)
+
+        if ctx.triggered_id=='cli-drop':
+
+            # Get description for cli
+            cli_results = 'Click "Run Job!" to do the damn thing!'
+        
+        elif ctx.triggered_id=='cli-run':
+            
+            # Running job:
+            cli_results = 'And then the job would run'
+        
+        return cli_description, cli_butt_disable, cli_results
 
 
 #if __name__ == '__main__':
@@ -2278,6 +2308,8 @@ def app(*args):
                 'hover_color':'#9caf00'
             }
 
+        cli_list = None
+
     else:
 
         # Getting graphics_reference.json from the FUSION Assets folder
@@ -2334,12 +2366,27 @@ def app(*args):
             'hover_color':'#9caf00'
         }
 
+        # Getting list of available CLIs in DSA instance
+        # This dict will contain all the info for the CLI's, have to reduce it to names
+        cli_dict_list = dataset_handler.get_cli_list()
+        cli_list = []
+        for c in cli_dict_list:
+            cli_dict = {'label':c['name'],'value':c['name']}
+
+            # Constraining to only the dsarchive ones just for convenience:
+            if 'dsarchive' in c['image']:
+                cli_dict['disabled'] = False
+            else:
+                cli_dict['disabled'] = True
+            
+            cli_list.append(cli_dict)
+
 
     external_stylesheets = [dbc.themes.LUX,dbc.icons.BOOTSTRAP]
 
     layout_handler = LayoutHandler()
     layout_handler.gen_initial_layout(slide_names)
-    layout_handler.gen_vis_layout(cell_names,center_point,map_dict,spot_dict,run_type,tile_size,map_bounds)
+    layout_handler.gen_vis_layout(cell_names,center_point,map_dict,spot_dict,run_type,tile_size,map_bounds,cli_list)
     layout_handler.gen_builder_layout(dataset_handler,run_type)
 
     download_handler = DownloadHandler(dataset_handler)
