@@ -402,7 +402,6 @@ class SlideHeatVis:
              prevent_initial_call = True
         )(self.run_analysis)
 
-        
     def builder_callbacks(self):
 
         self.app.callback(
@@ -854,8 +853,8 @@ class SlideHeatVis:
                     'states':[m_ftu['geojson']['features'][0]['properties']['Cell_States']]
                 }
             else:
-                intersecting_ftus[f'Manual ROI: {m_idx}'] = m_ftu['features'][0]['properties']
-
+                intersecting_ftus[f'Manual ROI: {m_idx}'] = [m_ftu['geojson']['features'][0]['properties']]
+                
         self.current_ftus = intersecting_ftus
         # Now we have main cell types, cell states, by ftu
 
@@ -966,10 +965,6 @@ class SlideHeatVis:
                     spot_counts = pd.DataFrame(g['main_counts'])[self.current_cell].tolist()
                     raw_values_list.extend(spot_counts)
 
-                for f in self.wsi.manual_rois:
-                    manual_counts = f['geojson']['features'][0]['properties']['Main_Cell_Types'][self.current_cell]
-                    raw_values_list.append(manual_counts)
-
             else:
                 for f in self.wsi.ftu_props:
                     for g in self.wsi.ftu_props[f]:
@@ -982,9 +977,9 @@ class SlideHeatVis:
                     spot_counts =f['Main_Cell_Types'][self.current_cell]
                     raw_values_list.append(spot_counts)
 
-                for f in self.wsi.manual_rois:
-                    manual_counts = f['Main_Cell_Types'][self.current_cell]
-                    raw_values_list.append(manual_counts)
+            for f in self.wsi.manual_rois:
+                manual_counts = f['geojson']['features'][0]['properties']['Main_Cell_Types'][self.current_cell]
+                raw_values_list.append(manual_counts)
 
         elif color_type == 'max_cell':
 
@@ -1701,7 +1696,8 @@ class SlideHeatVis:
             else:
 
                 # Pulling image region using provided coordinates
-                image_region = self.dataset_handler.get_image_region(self.wsi.item_id,[min_x,min_y,max_x,max_y])
+                # Have to find the slide id for this particular sample
+                image_region = self.dataset_handler.get_image_region(s['item_id'],[min_x,min_y,max_x,max_y])
                 img_list.append(resize(np.array(image_region),output_shape=(512,512,3)))
 
 
@@ -1829,8 +1825,14 @@ class SlideHeatVis:
 
                             # New geojson has no properties which can be used for overlays or anything so we have to add those
                             # Step 1, find intersecting spots:
-                            overlap_dict = self.wsi.find_intersecting_spots(shape(new_geojson['features'][0]['geometry']))
-                            main_counts_data = pd.DataFrame(overlap_dict['main_counts']).sum(axis=0).to_frame()
+                            if not self.run_type=='dsa':
+                                overlap_dict = self.wsi.find_intersecting_spots(shape(new_geojson['features'][0]['geometry']))
+                                main_counts_data = pd.DataFrame(overlap_dict['main_counts']).sum(axis=0).to_frame()
+                            else:
+
+                                overlap_spot_props = self.wsi.find_intersecting_spots(shape(new_geojson['features'][0]['geometry']))
+                                main_counts_data = pd.DataFrame.from_records([i['Main_Cell_Types'] for i in overlap_spot_props if 'Main_Cell_Types' in i]).sum(axis=0).to_frame()
+
                             main_counts_data = (main_counts_data/main_counts_data.sum()).fillna(0.000).round(decimals=18)
 
                             main_counts_data[0] = main_counts_data[0].map('{:.19f}'.format)
@@ -1839,7 +1841,13 @@ class SlideHeatVis:
 
                             agg_cell_states = {}
                             for m_c in list(main_counts_dict.keys()):
-                                cell_states = pd.DataFrame([i[m_c] for i in overlap_dict['states']]).sum(axis=0).to_frame()
+
+                                if not self.run_type=='dsa':
+                                    cell_states = pd.DataFrame([i[m_c] for i in overlap_dict['states']]).sum(axis=0).to_frame()
+                                else:
+                                    cell_states = pd.DataFrame.from_records([i['Cell_States'][m_c] for i in overlap_spot_props]).sum(axis=0).to_frame()
+
+
                                 cell_states = (cell_states/cell_states.sum()).fillna(0.000).round(decimals=18)
 
                                 cell_states[0] = cell_states[0].map('{:.19f}'.format)
@@ -1871,7 +1879,7 @@ class SlideHeatVis:
                                         hideout = dict(color_key = self.hex_color_key, current_cell = self.current_cell, fillOpacity = self.cell_vis_val),
                                         hoverStyle = arrow_function(dict(weight=5, color = '#32a852',dashArray = ''))
                                     )
-                                ), name = f'Manual ROI {len(self.wsi.manual_rois)}', checked = True, id = self.wsi.slide_info_dict['key_name']+f'_manual_roi{len(self.wsi.manual_rois)}'
+                                ), name = f'Manual ROI {len(self.wsi.manual_rois)}', checked = True, id = self.wsi.item_id+f'_manual_roi{len(self.wsi.manual_rois)}'
                             )
 
                             self.current_overlays.append(new_child)
@@ -2253,6 +2261,15 @@ def app(*args):
         #print(f'contents: {initial_collection_contents}')
         initial_collection_contents = [i for i in initial_collection_contents if 'largeImage' in i]
 
+        # Loading metadata for initial collection
+        print('Loading Metadata')
+        metadata = []
+        for i in initial_collection_contents:
+            item_annotations = dataset_handler.gc.get(f'/annotation/item/{i["_id"]}')
+            for g in tqdm(item_annotations):
+                for e in g['annotation']['elements']:
+                    e['user']['item_id'] = i['_id']
+                    metadata.append(e['user'])
 
     if not run_type=='dsa':
         # Reading dictionary containing paths for specific cell types
@@ -2332,10 +2349,12 @@ def app(*args):
         print(f'map_bounds: {map_bounds}')
         print(f'base_dims: {base_dims}')
         print(f'image_dims: {image_dims}')
-
+        
+        """
         metadata = []
         for f in geojson_annotations['features']:
             metadata.append(f['properties'])
+        """
 
         # Getting the slide data for DSASlide()
 

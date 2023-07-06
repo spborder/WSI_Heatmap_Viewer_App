@@ -23,7 +23,8 @@ class DSASlide:
                  geojson_annotations,
                  image_dims,
                  base_dims,
-                 manual_rois = []):
+                 manual_rois = [],
+                 marked_ftus = []):
 
         self.slide_name = slide_name
         self.item_id = item_id
@@ -32,6 +33,7 @@ class DSASlide:
         self.image_dims = image_dims
         self.base_dims = base_dims
         self.manual_rois = manual_rois
+        self.marked_ftus = marked_ftus
 
         # Initializing conversion scales
         self.x_scale = self.image_dims[0]/self.base_dims[0]
