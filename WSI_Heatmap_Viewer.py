@@ -869,55 +869,59 @@ class SlideHeatVis:
         if len(included_ftus)>0:
 
             tab_list = []
+            #counts_data = pd.DataFrame()
             for f_idx,f in enumerate(included_ftus):
+                counts_data = pd.DataFrame()
                 if not self.run_type == 'dsa':
                     counts_data = pd.DataFrame(intersecting_ftus[f]['main_counts']).sum(axis=0).to_frame()
                 else:
-                    counts_dict_list = [i['Main_Cell_Types'] for i in intersecting_ftus[f]]
-                    counts_data = pd.DataFrame.from_records(counts_dict_list).sum(axis=0).to_frame()
+                    counts_dict_list = [i['Main_Cell_Types'] for i in intersecting_ftus[f] if 'Main_Cell_Types' in i]
+                    if len(counts_dict_list)>0:
+                        counts_data = pd.DataFrame.from_records(counts_dict_list).sum(axis=0).to_frame()
 
-                counts_data.columns = [f]
+                if not counts_data.empty:
+                    counts_data.columns = [f]
 
-                # Normalizing to sum to 1
-                counts_data[f] = counts_data[f]/counts_data[f].sum()
-                # Only getting top n
-                counts_data = counts_data.sort_values(by=f,ascending=False).iloc[0:self.plot_cell_types_n,:]
-                counts_data = counts_data.reset_index()
+                    # Normalizing to sum to 1
+                    counts_data[f] = counts_data[f]/counts_data[f].sum()
+                    # Only getting top n
+                    counts_data = counts_data.sort_values(by=f,ascending=False).iloc[0:self.plot_cell_types_n,:]
+                    counts_data = counts_data.reset_index()
 
-                f_pie = px.pie(counts_data,values=f,names='index')
+                    f_pie = px.pie(counts_data,values=f,names='index')
 
-                top_cell = counts_data['index'].tolist()[0]
-                if not self.run_type == 'dsa':
-                    pct_states = pd.DataFrame([i[top_cell] for i in intersecting_ftus[f]['states']]).sum(axis=0).to_frame()
-                else:
-                    pct_states = pd.DataFrame.from_records([i['Cell_States'][top_cell] for i in intersecting_ftus[f]]).sum(axis=0).to_frame()
-                
-                pct_states = pct_states.reset_index()
-                pct_states.columns = ['Cell State','Proportion']
-                pct_states['Proportion'] = pct_states['Proportion']/pct_states['Proportion'].sum()
+                    top_cell = counts_data['index'].tolist()[0]
+                    if not self.run_type == 'dsa':
+                        pct_states = pd.DataFrame([i[top_cell] for i in intersecting_ftus[f]['states']]).sum(axis=0).to_frame()
+                    else:
+                        pct_states = pd.DataFrame.from_records([i['Cell_States'][top_cell] for i in intersecting_ftus[f]if 'Cell_States' in i]).sum(axis=0).to_frame()
+                    
+                    pct_states = pct_states.reset_index()
+                    pct_states.columns = ['Cell State','Proportion']
+                    pct_states['Proportion'] = pct_states['Proportion']/pct_states['Proportion'].sum()
 
-                state_bar = px.bar(pct_states,x='Cell State',y = 'Proportion', title = f'Cell State Proportions for:<br><sup>{self.cell_graphics_key[top_cell]["full"]} in:</sup><br><sup>{f}</sup>')
+                    state_bar = px.bar(pct_states,x='Cell State',y = 'Proportion', title = f'Cell State Proportions for:<br><sup>{self.cell_graphics_key[top_cell]["full"]} in:</sup><br><sup>{f}</sup>')
 
-                f_tab = dbc.Tab(
-                    dbc.Row([
-                        dbc.Col([
-                            dbc.Label(f'{f} Cell Type Proportions'),
-                            dcc.Graph(
-                                id = {'type':'ftu-cell-pie','index':f_idx},
-                                figure = go.Figure(f_pie)
-                            )
-                        ],md=6),
-                        dbc.Col([
-                            dbc.Label(f'{f} Cell State Proportions'),
-                            dcc.Graph(
-                                id = {'type':'ftu-state-bar','index':f_idx},
-                                figure = go.Figure(state_bar)
-                            )
-                        ],md=6)
-                    ]),label = f,tab_id = f'tab_{f_idx}'
-                )
+                    f_tab = dbc.Tab(
+                        dbc.Row([
+                            dbc.Col([
+                                dbc.Label(f'{f} Cell Type Proportions'),
+                                dcc.Graph(
+                                    id = {'type':'ftu-cell-pie','index':f_idx},
+                                    figure = go.Figure(f_pie)
+                                )
+                            ],md=6),
+                            dbc.Col([
+                                dbc.Label(f'{f} Cell State Proportions'),
+                                dcc.Graph(
+                                    id = {'type':'ftu-state-bar','index':f_idx},
+                                    figure = go.Figure(state_bar)
+                                )
+                            ],md=6)
+                        ]),label = f,tab_id = f'tab_{f_idx}'
+                    )
 
-                tab_list.append(f_tab)
+                    tab_list.append(f_tab)
 
             return dbc.Tabs(tab_list,active_tab = 'tab_0')
         else:
@@ -930,8 +934,11 @@ class SlideHeatVis:
             self.pie_cell = cell_click['points'][0]['label']
 
             self.pie_ftu = list(self.current_ftus.keys())[ctx.triggered_id['index']]
-
-            pct_states = pd.DataFrame([i[self.pie_cell] for i in self.current_ftus[self.pie_ftu]['states']]).sum(axis=0).to_frame()
+            if not self.run_type == 'dsa':
+                pct_states = pd.DataFrame([i[self.pie_cell] for i in self.current_ftus[self.pie_ftu]['states']]).sum(axis=0).to_frame()
+            else:
+                pct_states = pd.DataFrame.from_records([i['Cell_States'][self.pie_cell] for i in self.current_ftus[self.pie_ftu]]).sum(axis=0).to_frame()
+    
             pct_states = pct_states.reset_index()
             pct_states.columns = ['Cell State', 'Proportion']
             pct_states['Proportion'] = pct_states['Proportion']/pct_states['Proportion'].sum()
@@ -969,8 +976,9 @@ class SlideHeatVis:
                 for f in self.wsi.ftu_props:
                     for g in self.wsi.ftu_props[f]:
                         # Getting main counts for this ftu
-                        ftu_counts = g['Main_Cell_Types'][self.current_cell]
-                        raw_values_list.append(ftu_counts)
+                        if 'Main_Cell_Types' in g:
+                            ftu_counts = g['Main_Cell_Types'][self.current_cell]
+                            raw_values_list.append(ftu_counts)
 
                 for f in self.wsi.spot_props:
                     # Getting main counts for spots
@@ -993,8 +1001,9 @@ class SlideHeatVis:
                 # Iterating through current ftus
                 for f in self.wsi.ftu_props:
                     for g in self.wsi.ftu_props[f]:
-                        all_cell_type_counts = float(np.argmax(list(g['Main_Cell_Types'].values())))
-                        raw_values_list.append(all_cell_type_counts)
+                        if 'Main_Cell_Types' in g:
+                            all_cell_type_counts = float(np.argmax(list(g['Main_Cell_Types'].values())))
+                            raw_values_list.append(all_cell_type_counts)
 
         elif color_type == 'cluster':
             # iterating through current ftus
@@ -2139,7 +2148,7 @@ class SlideHeatVis:
     def run_analysis(self,cli_name,cli_butt):
 
         cli_dict = [i for i in self.dataset_handler.cli_dict_list if i['name']==cli_name][0]
-        cli_description = cli_dict['description']
+        cli_description = dcc.Markdown(cli_dict['description'])
         cli_id = cli_dict['_id']
         cli_butt_disable = False
 
@@ -2268,6 +2277,8 @@ def app(*args):
             item_annotations = dataset_handler.gc.get(f'/annotation/item/{i["_id"]}')
             for g in tqdm(item_annotations):
                 for e in g['annotation']['elements']:
+                    if 'user' not in e:
+                        e['user'] = {}
                     e['user']['item_id'] = i['_id']
                     metadata.append(e['user'])
 
@@ -2349,12 +2360,6 @@ def app(*args):
         print(f'map_bounds: {map_bounds}')
         print(f'base_dims: {base_dims}')
         print(f'image_dims: {image_dims}')
-        
-        """
-        metadata = []
-        for f in geojson_annotations['features']:
-            metadata.append(f['properties'])
-        """
 
         # Getting the slide data for DSASlide()
 

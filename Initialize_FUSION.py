@@ -557,36 +557,6 @@ class LayoutHandler:
         else:
             # Table with metadata for each dataset in dataset_handler
             combined_dataset_dict = []
-            """
-            # Getting items metadata and sorting by collection
-            current_items = dataset_handler.get_collection_items(dataset_handler.current_collection_path)
-            # Restricting to only image metadata
-            current_items = [i for i in current_items if 'largeImage' in i]
-            # Ordering by folderId
-            folderIds = [i['folderId'] for i in current_items]
-            for f in np.unique(folderIds):
-                # Name of folder
-                folder_name = dataset_handler.gc.get(f'/folder/{f}')['name']
-                print(folder_name)
-                # List of metadata dictionaries for each item in a folder
-                folder_data = [i['meta'] for i in current_items if i['folderId']==f]
-                meta_keys = []
-                for i in folder_data:
-                    meta_keys.extend(list(i.keys()))
-
-                meta_keys = list(set(meta_keys))
-                folder_dict = {'Name':folder_name}
-
-                # Not adding dictionaries to the folder metadata
-                for m in meta_keys:
-                    item_metadata = [item[m] for item in folder_data if m in item]
-                    if type(item_metadata[0])==str:
-                        folder_dict[m] = ','.join(list(set(item_metadata)))
-                    elif type(item_metadata[0])==int or type(item_metadata[0])==float:
-                        folder_dict[m] = sum(item_metadata)
-
-                combined_dataset_dict.append(folder_dict)
-            """
 
             # Accessing the folder structure saved in dataset_handler            
             for f in dataset_handler.slide_datasets:
@@ -666,8 +636,126 @@ class LayoutHandler:
             html.P('Happy fusing!')
         ]
 
+        # File upload card:
+        upload_types = [
+            {'label':'10x Visium','value':'Visium','disabled':False},
+            {'label':'Co-Detection by Indexing (CODEX)','value':'CODEX','disabled':True},
+            {'label':'CosMx','value':'CoxMx','disabled':True}
+        ]
+        file_upload_card = dbc.Card([
+            dbc.CardHeader('File Uploads'),
+            dbc.CardBody([
+                dbc.Row([
+                    dbc.Col([
+                        dbc.Label('Select Upload type:',html_for='upload-type'),
+                        dcc.Dropdown(upload_types, placeholder = 'Select Spatial -omics method', id = 'upload-type')
+                    ],md=4),
+                    dbc.Col([
+                        dbc.Label('Slide/Folder of Slides?',html_for = 'upload-file-folder'),
+                        dcc.Dropdown(['Single Sample','Multiple Samples'],'Single Sample',id='upload-file-folder',disabled=True)
+                    ],md=2),
+                    dbc.Col(html.Div(id='upload-requirements'),md=6)
+                ])
+            ])
+        ])
+
+        # Slide QC card:
+        slide_qc_card = dbc.Card([
+            dbc.CardHeader('Slide Quality Control Results'),
+            dbc.CardBody([
+                html.Div(id='slide-qc-results')
+            ])
+        ])
+
+        # MC model selection card:
+        organ_types = [
+            {'label':'Kidney','value':'Kidney','disabled':False}
+        ]
+        mc_model_card = dbc.Card([
+            dbc.CardHeader('Multi-Compartment Model Selection'),
+            dbc.CardBody([
+                dbc.Row([
+                    dbc.Col([
+                        dbc.Label('Select Organ:',html_for='organ-type'),
+                        dcc.Dropdown(organ_types,placeholder = 'It better be kidney',id='organ-type',disabled=True)
+                    ])
+                ])
+            ])
+        ])
+
+        # Sub-compartment segmentation card:
+        sub_comp_methods_list = [
+            {'label':'Manual','value':'Manual','disabled':False},
+            {'label':'Use Plugin','value':'plugin','disabled':True}
+        ]
+        sub_comp_card = dbc.Card([
+            dbc.CardHeader('Sub-Compartment Segmentation'),
+            dbc.CardBody([
+                dbc.Row([
+                    dbc.Col([
+                        dbc.Label('Select FTU',html_for='ftu-select'),
+                        dcc.Dropdown(placeholder='FTU Options',id='ftu-select')
+                    ],md=6),
+                    dbc.Col(html.Div(id='seg-qc-results'),md=6)
+                ]),
+                html.Hr(),
+                dbc.Row([
+                    dbc.Col(dcc.Graph(figure=go.Figure(),id='ex-ftu-img'),md=8),
+                    dbc.Col([
+                        dbc.Label('Example FTU Segmentation Options',html_for='ex-ftu-opts'),
+                        html.Hr(),
+                        html.Div(id='ex-ftu-opts',children = [
+                            dcc.RadioItems(['Overlaid','Side-by-Side'],value='Overlaid',inline=True,id='ex-ftu-view'),
+                            html.B(),
+                            dbc.Label('Overlaid Mask Transparency:',html_for='ex-ftu-slider'),
+                            dcc.Slider(0,100,5,value=50,marks=None,vertical=False,tooltip={'placement':'bottom'})
+                        ]),
+
+                    ],md=4)
+                ]),
+                html.Hr(),
+                dbc.Row([
+                    dbc.Col(dbc.Label('Sub-compartment Segmentation Method:',html_for='sub-comp-method'),md=4),
+                    dbc.Col(
+                        [
+                            dcc.Dropdown(sub_comp_methods_list,placeholder='Available Methods',id='sub-comp-method')
+                        ],md=8
+                    )
+                ]),
+                dbc.Row(html.Div(id='sub-comp-tabs'))
+            ])
+        ])
+
+        # Feature extraction card:
+        feat_extract_card = dbc.Card([
+            dbc.CardHeader('Morphometric Feature Extraction'),
+            dbc.CardBody([
+                html.Div(id='feature-items')
+            ])
+        ])
+
+        # Progressbar
+        p_bar = dbc.Progress(id='p-bar')
+
         uploader_layout =[
-                html.H1('Dataset Uploader')
+                html.H1('Dataset Uploader'),
+                html.Hr(),
+                dbc.Row(
+                    file_upload_card
+                ),
+                html.Hr(),
+                dbc.Row([
+                    dbc.Col(slide_qc_card,style={'margin-right':'20px'}),
+                    dbc.Col(mc_model_card,style={'margin-left':'20px'})
+                ]),
+                html.Hr(),
+                dbc.Row([
+                    dbc.Col(sub_comp_card,style={'margin-right':'20px'}),
+                    dbc.Col(feat_extract_card,style={'margin-left':'20px'})
+                ]),
+                html.Hr(),
+                dbc.Row(p_bar)
+
             ]
         self.current_uploader_layout = uploader_layout
         self.validation_layout.append(uploader_layout)
@@ -795,7 +883,7 @@ class LayoutHandler:
                     dbc.NavLink('Welcome',href='/welcome',active='exact'),
                     dbc.NavLink('FUSION Visualizer',href='/vis',active='exact'),
                     dbc.NavLink('Dataset Builder',href='/dataset-builder',active='exact'),
-                    dbc.NavLink('Dataset Uploader',href='/dataset-uploader',active='exact',disabled=True)
+                    dbc.NavLink('Dataset Uploader',href='/dataset-uploader',active='exact')
                 ],vertical=True,pills=True)], id={'type':'sidebar-offcanvas','index':0},style={'background-color':"#f8f9fa"}
             )
         ])
@@ -1008,21 +1096,41 @@ class GirderHandler:
             if 'elements' in a['annotation']:
                 f_name = a['annotation']['name']
                 for f in a['annotation']['elements']:
-                    f_dict = {'type':'Feature','geometry':{'type':'Polygon','coordinates':[]}}
-                    og_coords = np.squeeze(np.array(f['points']))
-                    if len(np.shape(og_coords))==2:
+                    f_dict = {'type':'Feature','geometry':{'type':'Polygon','coordinates':[]},'properties':{}}
+                    
+                    # This is only for polyline type elements
+                    if f['type']=='polyline':
+                        og_coords = np.squeeze(np.array(f['points']))
+                        
                         scaled_coords = og_coords.tolist()
                         scaled_coords = [i[0:-1] for i in scaled_coords]
                         scaled_coords = [[base_x_scale*((i[0]*x_scale)),base_y_scale*((i[1]*y_scale))] for i in scaled_coords]
                         f_dict['geometry']['coordinates'] = [scaled_coords]
 
-                        # If any user-provided metadata is provided per element add it to "properties" key
-                        if 'user' in f:
-                            f_dict['properties'] = f['user']
+                    elif f['type']=='rectangle':
+                        width = f['width']
+                        height = f['height']
+                        center = f['center'][0:-1]
+                        # Coords: top left, top right, bottom right, bottom left
+                        bbox_coords = [
+                            [int(center[0])-int(width/2),int(center[1])-int(height/2)],
+                            [int(center[0])+int(width/2),int(center[1])-int(height/2)],
+                            [int(center[0])+int(width/2),int(center[1])+int(height/2)],
+                            [int(center[0])-int(width/2),int(center[1])+int(height/2)]
+                        ]
+                        scaled_coords = [[base_x_scale*(i[0]*x_scale),base_y_scale*(i[1]*y_scale)] for i in bbox_coords]
+                        f_dict['geometry']['coordinates'] = [scaled_coords]
 
-                        f_dict['properties']['name'] = f_name
+                    # Who even cares about circles and ellipses??
 
-                        final_ann['features'].append(f_dict)
+                    # If any user-provided metadata is provided per element add it to "properties" key                       
+                    if 'user' in f:
+                        f_dict['properties'] = f['user']
+
+                    f_dict['properties']['name'] = f_name
+
+                    final_ann['features'].append(f_dict)
+
 
         return final_ann
 
@@ -1219,14 +1327,16 @@ class DownloadHandler:
         except OSError as e:
             print(f'OSError removing FUSION_Download directory: {e.strerror}')
 
-    def extract_annotations(self, slide, format):
+    def extract_annotations(self, slide, format, run_type):
         
         # Extracting annotations from the current slide object
         annotations = slide.geojson_ftus
 
-        # Making output scale for the coordinates
-        width_scale = slide.wsi_dims[0]/slide.slide_bounds[2]
-        height_scale = slide.wsi_dims[1]/slide.slide_bounds[3]
+        if not run_type == 'dsa':
+            # Making output scale for the coordinates
+            width_scale = slide.wsi_dims[0]/slide.slide_bounds[2]
+            height_scale = slide.wsi_dims[1]/slide.slide_bounds[3]
+
 
         if format=='GeoJSON':
             
@@ -1319,6 +1429,8 @@ class DownloadHandler:
                         output_dict['elements'].append(struct_dict)
 
             final_ann.append(output_dict)
+
+        
 
         return [{'filename': save_name, 'content':final_ann}]
     
