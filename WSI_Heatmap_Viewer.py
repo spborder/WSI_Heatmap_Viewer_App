@@ -33,6 +33,7 @@ import geojson
 import random
 
 import requests
+import girder_client
 
 import plotly.express as px
 from plotly.subplots import make_subplots
@@ -226,6 +227,7 @@ class SlideHeatVis:
         self.all_layout_callbacks()
         self.builder_callbacks()
         self.welcome_callbacks()
+        self.upload_callbacks()
 
         # Comment out this line when running on the web
         if self.run_type == 'local':
@@ -287,6 +289,16 @@ class SlideHeatVis:
             [State({'type':'sidebar-offcanvas','index':MATCH},'is_open')],
             prevent_initial_call=True
         )(self.view_sidebar)
+
+        self.app.callback(
+            [Output('login-submit','color'),
+             Output('login-submit','children'),
+             Output('logged-in-user','children')],
+            [Input('username-input','value'),
+             Input('pword-input','value'),
+             Input('login-submit','n_clicks')],
+             prevent_initial_call=True
+        )(self.girder_login)
 
     def vis_callbacks(self):
 
@@ -431,6 +443,19 @@ class SlideHeatVis:
             Output({'type':'video','index':ALL},'src'),
             prevent_initial_call = True
         )(self.get_video)
+
+    def upload_callbacks(self):
+
+        # Creating upload components depending on omics type
+        self.app.callback(
+            [Input('collect-select','value'),
+             Input({'type':'new-collect-entry','index':ALL},'value'),
+             Input('upload-type','value')],
+             Output('upload-requirements','children'),
+             prevent_initial_call=True
+        )(self.update_upload_requirements)
+
+        # Enabling components after upload is complete
 
     def get_video(self,tutorial_category):
         tutorial_category = tutorial_category[0]
@@ -2169,6 +2194,107 @@ class SlideHeatVis:
         
         return cli_description, cli_butt_disable, cli_results
 
+    def update_upload_requirements(self,collection,new_collect,upload_type):
+
+        # Creating an upload div specifying which files are needed for a given upload type
+        if ctx.triggered_id=='upload-type':
+            if not collection=='New Collection':
+
+                # Getting the collection id
+                collection_id = self.dataset_handler.get_resource_id(f'/collection/{collection}')
+
+            else:
+                if new_collect is not None:
+
+                    # Creating a new collection with this name
+                    self.dataset_handler.gc.post('/collection',parameters={'name':new_collect})
+                    collection_id = self.dataset_handler.get_resource_id(f'/collection/{new_collect}')
+            
+            upload_style = {
+                'width':'100%',
+                'height':'40px',
+                'lineHeight':'40px',
+                'borderWidth':'1px',
+                'borderStyle':'dashed',
+                'borderRadius':'5px',
+                'textAlign':'center',
+                'margin':'10px'
+            }
+
+            if upload_type=='Visium':
+                upload_reqs = html.Div(
+                    dbc.Row([
+                        dcc.Upload(
+                            id={'type':'wsi-upload','index':0},
+                            children = html.Div([
+                                'Drag and Drop or ',
+                                html.A('Select WSI File')
+                            ]),
+                            style = upload_style,
+                            multiple=False
+                        ),
+                        html.Div(id={'type':'wsi-upload-contents','index':0})
+                    ]),
+                    dbc.Row([
+                        dcc.Upload(
+                            id={'type':'omics-upload','index':0},
+                            children = html.Div([
+                                'Drag and Drop or ',
+                                html.A('Select Omics File')
+                            ]),
+                            style = upload_style,
+                            multiple = False
+                        ),
+                        html.Div(id={'type':'omics-upload-contents','index':0})
+                    ])
+                )
+            
+            elif upload_type=='CODEX':
+
+                upload_reqs = html.Div(
+                    dbc.Row([
+                        dcc.Upload(
+                            id={'type':'wsi-upload','index':1},
+                            children = html.Div([
+                                'Drag and Drop or ',
+                                html.A('Select qptiff File')
+                            ]),
+                            style = upload_style,
+                            multiple = False
+                        ),
+                        html.Div(id={'type':'wsi-upload-contents','index':1})
+                    ])
+                )
+
+            else:
+                upload_reqs = html.Div(
+                    'You should not have done that'
+                )
+            
+            return upload_reqs
+        else:
+            raise exceptions.PreventUpdate
+
+    def girder_login(self,username,pword,p_butt):
+
+        if ctx.triggered_id=='login-submit':
+
+            try:
+                self.dataset_handler.authenticate(username,pword)
+
+                button_color = 'success'
+                button_text = 'Success!'
+                logged_in_user = f'Welcome: {username}'
+
+            except girder_client.AuthenticationError:
+
+                button_color = 'warning'
+                button_text = 'Login Failed'
+                logged_in_user = ''
+
+            return button_color, button_text, logged_in_user
+        else:
+            raise exceptions.PreventUpdate
 
 #if __name__ == '__main__':
 def app(*args):
@@ -2412,6 +2538,7 @@ def app(*args):
     layout_handler.gen_initial_layout(slide_names)
     layout_handler.gen_vis_layout(cell_names,center_point,map_dict,spot_dict,run_type,tile_size,map_bounds,cli_list)
     layout_handler.gen_builder_layout(dataset_handler,run_type)
+    layout_handler.gen_uploader_layout(dataset_handler)
 
     download_handler = DownloadHandler(dataset_handler)
 

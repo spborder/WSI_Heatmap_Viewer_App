@@ -58,7 +58,7 @@ class LayoutHandler:
         self.info_button_idx = -1
 
         self.gen_welcome_layout()
-        self.gen_uploader_layout()
+        #self.gen_uploader_layout()
 
     def gen_info_button(self,text):
         
@@ -625,7 +625,7 @@ class LayoutHandler:
         self.layout_dict['dataset-builder'] = builder_layout
         self.description_dict['dataset-builder'] = builder_description
 
-    def gen_uploader_layout(self):
+    def gen_uploader_layout(self,dataset_handler):
 
         # This builds the layout for the Dataset Uploader functionality,
         # allowing users to upload their own data to be incorporated into the 
@@ -642,18 +642,21 @@ class LayoutHandler:
             {'label':'Co-Detection by Indexing (CODEX)','value':'CODEX','disabled':True},
             {'label':'CosMx','value':'CoxMx','disabled':True}
         ]
+        collection_list = [i['name'] for i in dataset_handler.get_collections()]
+        collection_list += ['New Collection']
         file_upload_card = dbc.Card([
             dbc.CardHeader('File Uploads'),
             dbc.CardBody([
                 dbc.Row([
                     dbc.Col([
+                        dbc.Label('Select Collection or Make New Collection',html_for='collect-select'),
+                        dcc.Dropdown(collection_list,placeholder='Collections'),
+                        html.Div(id='new-collection')
+                    ],md=2),
+                    dbc.Col([
                         dbc.Label('Select Upload type:',html_for='upload-type'),
                         dcc.Dropdown(upload_types, placeholder = 'Select Spatial -omics method', id = 'upload-type')
                     ],md=4),
-                    dbc.Col([
-                        dbc.Label('Slide/Folder of Slides?',html_for = 'upload-file-folder'),
-                        dcc.Dropdown(['Single Sample','Multiple Samples'],'Single Sample',id='upload-file-folder',disabled=True)
-                    ],md=2),
                     dbc.Col(html.Div(id='upload-requirements'),md=6)
                 ])
             ])
@@ -897,12 +900,38 @@ class LayoutHandler:
             html.P('Happy fusing!')
         ]
 
+        # Login popover
+        login_popover = dbc.Popover(
+            [
+                dbc.PopoverHeader('Enter your username and password:'),
+                dbc.PopoverBody([
+                    dbc.Label('Username:',width='auto'),
+                    dbc.Col(
+                        dbc.Input(type='text',placeholder='Username',id='username-input')
+                    ),
+                    dbc.Label('Password',width='auto'),
+                    dbc.Col(
+                        dbc.Input(type='password',placeholder='Password',id='pword-input')
+                    ),
+                    dbc.Col(
+                        dbc.Button('Submit',color='primary',id='login-submit'),width='auto'
+                    )
+                ])
+            ],
+            target = {'type':'login-butt','index':0},
+            body=True,
+            trigger='click'
+        )
+
         description = dbc.Card(
             children = [
                 #dbc.CardHeader("Description and Instructions"),
                 dbc.CardBody([
                     dbc.Button('Open Sidebar',id={'type':'sidebar-button','index':0},className='mb-3',color='primary',n_clicks=0,style={'marginRight':'5px'}),
                     dbc.Button("View/Hide Description",id={'type':'collapse-descrip','index':0},className='mb-3',color='primary',n_clicks=0,style={'marginLeft':'5px'}),
+                    dbc.Button('Registered User Login',id={'type':'login-butt','index':0},className='mb-3',style = {'marginLeft':'5px'}),
+                    login_popover,
+                    html.Div(id='logged-in-user'),
                     dbc.Collapse(
                         dbc.Row(
                             dbc.Col(
@@ -917,6 +946,7 @@ class LayoutHandler:
                 ])
             ],style={'marginBottom':'20px'}
         )
+
 
         # Slide select row (seeing if keeping it in every layout will let it be updated by actions in other pages)
         # Slide selection
@@ -959,7 +989,8 @@ class LayoutHandler:
             html.B(),
             dbc.Row(
                 id = 'descrip-and-instruct',
-                children = description
+                children = description,
+                align='center'
             ),
             dbc.Row(
                 id = 'slide-select-row',
