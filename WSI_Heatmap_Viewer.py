@@ -449,9 +449,10 @@ class SlideHeatVis:
         # Creating upload components depending on omics type
         self.app.callback(
             [Input('collect-select','value'),
-             Input({'type':'new-collect-entry','index':ALL},'value'),
+             Input('new-collect-entry','value'),
              Input('upload-type','value')],
-             Output('upload-requirements','children'),
+             [Output('upload-requirements','children'),
+              Output('new-collect-entry','disabled')],
              prevent_initial_call=True
         )(self.update_upload_requirements)
 
@@ -1030,6 +1031,9 @@ class SlideHeatVis:
                             all_cell_type_counts = float(np.argmax(list(g['Main_Cell_Types'].values())))
                             raw_values_list.append(all_cell_type_counts)
 
+                #TODO: For slides without any ftu's, search through the spots for cell names
+                # Also search through manual ROIs
+
         elif color_type == 'cluster':
             # iterating through current ftus
             if not self.run_type=='dsa':
@@ -1547,7 +1551,7 @@ class SlideHeatVis:
                         'color':'',
                         'hover_color':''
                     }
-                    for struct in self.wsi.ftu_names
+                    for struct in new_slide.ftu_names
                 }
             }
 
@@ -2156,7 +2160,7 @@ class SlideHeatVis:
                 if download_type == 'annotations':
                     download_list = self.download_handler.extract_annotations(self.wsi,options)
                 elif download_type == 'cell':
-                    download_list = self.download_handler.extract_cell(self.wsi,options)
+                    download_list = self.download_handler.extract_cell(self.current_ftus,options)
                 else:
                     print('Working on it!')
                     download_list = []
@@ -2195,7 +2199,8 @@ class SlideHeatVis:
         return cli_description, cli_butt_disable, cli_results
 
     def update_upload_requirements(self,collection,new_collect,upload_type):
-
+        
+        input_disabled = True
         # Creating an upload div specifying which files are needed for a given upload type
         if ctx.triggered_id=='upload-type':
             if not collection=='New Collection':
@@ -2222,7 +2227,7 @@ class SlideHeatVis:
             }
 
             if upload_type=='Visium':
-                upload_reqs = html.Div(
+                upload_reqs = html.Div([
                     dbc.Row([
                         dcc.Upload(
                             id={'type':'wsi-upload','index':0},
@@ -2247,11 +2252,11 @@ class SlideHeatVis:
                         ),
                         html.Div(id={'type':'omics-upload-contents','index':0})
                     ])
-                )
+                ])
             
             elif upload_type=='CODEX':
 
-                upload_reqs = html.Div(
+                upload_reqs = html.Div([
                     dbc.Row([
                         dcc.Upload(
                             id={'type':'wsi-upload','index':1},
@@ -2264,14 +2269,22 @@ class SlideHeatVis:
                         ),
                         html.Div(id={'type':'wsi-upload-contents','index':1})
                     ])
-                )
+                ])
 
             else:
                 upload_reqs = html.Div(
                     'You should not have done that'
                 )
             
-            return upload_reqs
+            return upload_reqs, input_disabled
+        
+        elif ctx.triggered_id=='collect_select':
+            if collection=='New Collection':
+                input_disabled = False
+            else:
+                input_disabled = True
+            
+            return html.Div(),input_disabled
         else:
             raise exceptions.PreventUpdate
 

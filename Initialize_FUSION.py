@@ -650,15 +650,16 @@ class LayoutHandler:
                 dbc.Row([
                     dbc.Col([
                         dbc.Label('Select Collection or Make New Collection',html_for='collect-select'),
-                        dcc.Dropdown(collection_list,placeholder='Collections'),
-                        html.Div(id='new-collection')
+                        dcc.Dropdown(collection_list,placeholder='Collections',id='collect-select'),
+                        html.B(),
+                        dcc.Input(type='text',placeholder='New Collection Name',id='new-collect-entry',disabled=True,style={'marginTop':'2px'})
                     ],md=2),
                     dbc.Col([
                         dbc.Label('Select Upload type:',html_for='upload-type'),
                         dcc.Dropdown(upload_types, placeholder = 'Select Spatial -omics method', id = 'upload-type')
                     ],md=4),
                     dbc.Col(html.Div(id='upload-requirements'),md=6)
-                ])
+                ],align='center')
             ])
         ])
 
@@ -1367,7 +1368,9 @@ class DownloadHandler:
             # Making output scale for the coordinates
             width_scale = slide.wsi_dims[0]/slide.slide_bounds[2]
             height_scale = slide.wsi_dims[1]/slide.slide_bounds[3]
-
+        else:
+            width_scale = slide.x_scale
+            height_scale = slide.y_scale
 
         if format=='GeoJSON':
             
@@ -1469,40 +1472,20 @@ class DownloadHandler:
     def extract_metadata(self,slides, include_meta):
     
     """
-    def extract_cell(self, slide, file_format):
+    def extract_cell(self, intersecting_ftus, file_name):
         # Output here is a dictionary containing Main_Cell_Types and Cell_States for each FTU
         # Main_Cell_Types is a pd.DataFrame with a column for every cell type and an index of the FTU label
         # Cell states is a dictionary of pd.DataFrames with a column for every cell state and an index of the FTU label for each main cell type
 
-        final_cell_info = {}
-        for ftu in list(slide.ftus.keys()):
-
-            ftu_annotations = [i for i in slide.geojson_ftus['features'] if i['properties']['structure']==ftu]
-            ftu_main_cells = pd.DataFrame.from_records([i['properties']['Main_Cell_Types'] for i in ftu_annotations])
-            ftu_main_cells.index = [i['properties']['label'] for i in ftu_annotations]
-            
-            cell_types = ftu_main_cells.columns
-            ftu_cell_states = {}
-            for c in cell_types:
-
-                cell_state_df = pd.DataFrame.from_records([i['properties']['Cell_States'][c] for i in ftu_annotations])
-                cell_state_df.index = [i['properties']['label'] for i in ftu_annotations]
-                ftu_cell_states[c] = cell_state_df
-            
-
-            final_cell_info[ftu] = {'Main_Cell_Types':ftu_main_cells,'Cell_States':ftu_cell_states}
-
         # Formatting for downloads
-        base_save_name = slide.slide_name.replace('.'+slide.slide_ext,'')
         download_data = []
-        for ftu in list(final_cell_info.keys()):
+        for ftu in list(intersecting_ftus.keys()):
 
             # Main cell types should just be one file
-            print(f'file_format: {file_format}')
-            if file_format=='Excel File':
-                main_content = {'filename':base_save_name+'_Main_Cell_Types.xlsx','sheet':ftu,'content':final_cell_info[ftu]['Main_Cell_Types']}
-            elif file_format=='CSV Files':
-                main_content = {'filename':base_save_name+f'_Main_Cell_Types_{ftu}.csv','content':final_cell_info[ftu]['Main_Cell_Types']}
+            if 'xlsx' in file_name:
+                main_content = {'filename':file_name,'sheet':ftu,'content':intersecting_ftus[ftu]['Main_Cell_Types']}
+            elif 'csv' in file_name:
+                main_content = {'filename':file_name,'content':intersecting_ftus[ftu]['Main_Cell_Types']}
             else:
                 print('Invalid format (RDS will come later)')
                 main_content = {}
@@ -1510,11 +1493,11 @@ class DownloadHandler:
             download_data.append(main_content)
 
             # Cell state info
-            for mc in final_cell_info[ftu]['Cell_States']:
-                if file_format=='Excel File':
-                    state_content = {'filename':base_save_name+f'_{ftu}_Cell_States.xlsx','sheet':mc.replace('/',''),'content':final_cell_info[ftu]['Cell_States'][mc]}
-                elif file_format=='CSV Files':
-                    state_content = {'filename':base_save_name+f'_{ftu}_{mc.replace("/","")}_Cell_States.csv','content':final_cell_info[ftu]['Cell_States'][mc]}
+            for mc in intersecting_ftus[ftu]['Cell_States']:
+                if 'xlsx' in file_name:
+                    state_content = {'filename':file_name.replace('.xlsx','')+f'_{ftu}_Cell_States.xlsx','sheet':mc.replace('/',''),'content':intersecting_ftus[ftu]['Cell_States'][mc]}
+                elif 'csv' in file_name:
+                    state_content = {'filename':file_name.replace('.csv','')+f'_{ftu}_{mc.replace("/","")}_Cell_States.csv','content':intersecting_ftus[ftu]['Cell_States'][mc]}
                 else:
                     print('Invalid format (RDS will come later)')
                     state_content = {}
