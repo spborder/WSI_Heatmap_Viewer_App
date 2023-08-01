@@ -138,8 +138,8 @@ class SlideHeatVis:
             'Spots':'#dffa00'
         }
 
-        self.current_ftu_layers = self.wsi.ftu_names
-        self.current_ftus = self.wsi.ftu_names
+        self.current_ftu_layers = self.wsi.ftu_names+['Spots']
+        self.current_ftus = self.wsi.ftu_names+['Spots']
         self.pie_ftu = self.current_ftu_layers[-1]
         self.pie_chart_order = self.current_ftu_layers.copy()
 
@@ -1541,6 +1541,17 @@ class SlideHeatVis:
 
             new_slide = DSASlide(slide_name,slide_id,tile_url,geojson_annotations,image_dims,base_dims)
 
+            self.wsi = new_slide
+
+            if not self.current_cell in ['max','cluster']:
+                self.update_hex_color_key('cell_value')
+            elif self.current_cell == 'max':
+                self.update_hex_color_key('max_cell')
+            elif self.current_cell == 'cluster':
+                self.update_hex_color_key('cluster')
+            else:
+                self.update_hex_color_key(self.current_cell)
+
             # map_dict contains ftu geojson information
             map_dict = {
                 'url': tile_url,
@@ -1598,18 +1609,8 @@ class SlideHeatVis:
                 )
 
             new_url = tile_url
-            center_point = [0.5*(map_bounds[0][0]+map_bounds[1][0]),0.5*(map_bounds[0][1]+map_bounds[1][1])]
+            center_point = [0.5*(map_bounds[0][0]+map_bounds[1][0]),-0.5*(map_bounds[0][1]+map_bounds[1][1])]
 
-        self.wsi = new_slide
-
-        if not self.current_cell in ['max','cluster']:
-            self.update_hex_color_key('cell_value')
-        elif self.current_cell == 'max':
-            self.update_hex_color_key('max_cell')
-        elif self.current_cell == 'cluster':
-            self.update_hex_color_key('cluster')
-        else:
-            self.update_hex_color_key(self.current_cell)
 
         self.current_ftus = self.wsi.ftu_names
         self.current_ftu_layers = self.wsi.ftu_names
@@ -1618,7 +1619,10 @@ class SlideHeatVis:
         self.current_overlays = new_children
 
         # Adding fresh edit-control to the outputs
-        new_edit_control = dl.EditControl(id={'type':'edit_control','index':np.random.randint(0,1000)})
+        new_edit_control = dl.EditControl(
+            id={'type':'edit_control','index':np.random.randint(0,1000)},
+            draw = dict(line=False,circle=False,circlemarker=False)
+            )
 
         return new_url, new_children, center_point, map_bounds, tile_size, new_edit_control
 
@@ -2394,18 +2398,19 @@ def app(*args):
         #    print('Get a load of this guy, no login!')
 
         # Initial collection TODO: get some default image as a placeholder in the visualization
-        initial_collection = '/collection/10X_Visium'
+        initial_collection = '/collection/10X_Visium/FFPE Cohort/Histology/Reference'
+        path_type = 'folder'
         #setattr(dataset_handler,'current_collection_path',initial_collection)
         print(f'initial collection: {initial_collection}')
         initial_collection_id = dataset_handler.gc.get('resource/lookup',parameters={'path':initial_collection})
         #setattr(dataset_handler,'current_collection_id',initial_collection_id)
         
         # Saving & organizing relevant id's in GirderHandler
-        dataset_handler.initialize_folder_structure(initial_collection)
+        dataset_handler.initialize_folder_structure(initial_collection,path_type)
 
         print(f'found initial collection: {initial_collection_id}')
         # Contents of folder
-        initial_collection_contents = dataset_handler.gc.get(f'resource/{initial_collection_id["_id"]}/items',parameters={'type':'collection'})
+        initial_collection_contents = dataset_handler.gc.get(f'resource/{initial_collection_id["_id"]}/items',parameters={'type':path_type})
         #print(f'contents: {initial_collection_contents}')
         initial_collection_contents = [i for i in initial_collection_contents if 'largeImage' in i]
 

@@ -1222,13 +1222,13 @@ class GirderHandler:
 
         return cli
 
-    def initialize_folder_structure(self,path):
+    def initialize_folder_structure(self,path,path_type):
 
         self.current_collection_path = path
         self.current_collection_id = self.gc.get('resource/lookup',parameters={'path':self.current_collection_path})['_id']
 
         # Getting contents of base collection
-        collection_contents = self.gc.get(f'resource/{self.current_collection_id}/items',parameters={'type':'collection'})
+        collection_contents = self.gc.get(f'resource/{self.current_collection_id}/items',parameters={'type':path_type})
         # Reducing list to only images
         collection_slides = [i for i in collection_contents if 'largeImage' in i]
         # folderIds for each item (determining ordering of slides)

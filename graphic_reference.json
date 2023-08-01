@@ -32,7 +32,7 @@
         "class":["Epithelial"]
     },
     "DCT":{
-        "graphic":"./assets/cell_graphics/dct_graphic.jpg",
+        "graphic":"./assets/cell_graphics/dct_graphic.svg",
         "full":"Distal Convoluted Tubule",
         "subtypes":["DCT","DCT1","DCT2","dDCT","cycDCT"],
         "states":["reference","reference","reference","degenerative","cycling"],
