@@ -79,7 +79,7 @@ class LayoutHandler:
 
         return info_button
 
-    def gen_vis_layout(self,cell_types, center_point, map_dict, spot_dict, run_type, tile_size, map_bounds = None, cli_list = None):
+    def gen_vis_layout(self,cell_types, center_point, map_dict, spot_dict, slide_properties, run_type, tile_size, map_bounds = None, cli_list = None):
 
         # Main visualization layout, used in initialization and when switching to the viewer
 
@@ -370,13 +370,13 @@ class LayoutHandler:
         ])
 
         # Tools for selecting regions, transparency, and cells
-        cell_types+=['Max Cell Type','Morphometrics Clusters','Area','Mesangial Area','Mesangial Fraction','Arterial Area','Luminal Fraction','Average TBM Thickness','Average Cell Thickness']
+        #cell_types+=['Max Cell Type','Morphometrics Clusters','Area','Mesangial Area','Mesangial Fraction','Arterial Area','Luminal Fraction','Average TBM Thickness','Average Cell Thickness']
         
         # Converting the cell_types list into a dictionary to disable some
         #disable_list = ['Morphometrics Clusters','Area','Mesangial Area','Mesangial Fraction','Arterial Area','Luminal Fraction','Average TBM Thickness','Average Cell Thickness']
         disable_list = []
         cell_types_list = []
-        for c in cell_types:
+        for c in slide_properties:
             if c not in disable_list:
                 cell_types_list.append({'label':c,'value':c,'disabled':False})
             else:

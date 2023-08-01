@@ -143,6 +143,13 @@ class SlideHeatVis:
         self.pie_ftu = self.current_ftu_layers[-1]
         self.pie_chart_order = self.current_ftu_layers.copy()
 
+        # Specifying available properties with visualizations implemented
+        # TODO:Add cell states in there later, need to figure out how to view proportions of different cell states in the same overlay
+        self.visualization_properties = [
+            'Area', 'Arterial Area', 'Average Cell Thickness', 'Average TBM Thickness', 'Cluster',
+            'Luminal Fraction','Main_Cell_Types','Mesangial Area','Mesangial Fraction'
+        ]
+
         self.current_chart_coords = [0,0]
 
         # Initializing some parameters
@@ -347,7 +354,8 @@ class SlideHeatVis:
              Output('slide-map','center'),
              Output('slide-map','bounds'),
              Output('slide-tile','tileSize'),
-             Output('feature-group','children')],
+             Output('feature-group','children'),
+             Output('cell-drop','options')],
             Input('slide-select','value'),
             prevent_initial_call=True,
             suppress_callback_exceptions=True
@@ -1033,6 +1041,11 @@ class SlideHeatVis:
 
                 #TODO: For slides without any ftu's, search through the spots for cell names
                 # Also search through manual ROIs
+                for s in self.wsi.spot_props:
+                    for g in self.wsi.spot_props[s]:
+                        if 'Main_Cell_Types' in g:
+                            all_cell_type_counts = float(np.argmax(list(g['Main_Cell_Types'].values())))
+                            raw_values_list.append(all_cell_type_counts)
 
         elif color_type == 'cluster':
             # iterating through current ftus
@@ -1081,20 +1094,32 @@ class SlideHeatVis:
 
     def update_cell(self,cell_val,vis_val):
         
+        # Update for sub-properties
+        m_prop = None
+        if '-->' in cell_val:
+            cell_val_parts = cell_val.split(' --> ')
+            m_prop = cell_val_parts[0]
+            cell_val = cell_val_parts[1]
+
         if not cell_val is None:
             # Updating current cell prop
             if cell_val in self.cell_names_key:
-                self.current_cell = self.cell_names_key[cell_val]
-                self.update_hex_color_key('cell_value')
+                if m_prop == 'Main_Cell_Types':
+                    self.current_cell = self.cell_names_key[cell_val]
+                    self.update_hex_color_key('cell_value')
 
-                color_bar = dl.Colorbar(colorscale = list(self.hex_color_key.values()),width=600,height=10,position='bottomleft',id=f'colorbar{random.randint(0,100)}')
-            
+                    color_bar = dl.Colorbar(colorscale = list(self.hex_color_key.values()),width=600,height=10,position='bottomleft',id=f'colorbar{random.randint(0,100)}')
+                elif m_prop == 'Cell_States':
+                    self.current_cell = self.cell_names_key[cell_val]
+                    self.update_hex_color_key('cell_state')
+
+                    color_bar = dl.Colorbar(colorscale = list(self.hex_color_key.values()),width=600,height=10,position='bottomleft',id=f'colorbar{random.randint(0,100)}')
+
             elif cell_val == 'Max Cell Type':
                 self.update_hex_color_key('max_cell')
                 self.current_cell = 'max'
 
                 cell_types = list(self.wsi.geojson_ftus['features'][0]['properties']['Main_Cell_Types'].keys())
-                print(cell_types)
                 color_bar = dlx.categorical_colorbar(categories = cell_types, colorscale = list(self.hex_color_key.values()),width=600,height=10,position='bottomleft',id=f'colorbar{random.randint(0,100)}')
             
             elif cell_val == 'Morphometrics Clusters':
@@ -1277,7 +1302,7 @@ class SlideHeatVis:
                         chart_dict_data = chart_dict_data['Cell_States'][self.current_cell]
                     else:
                         # For clusters and morphometrics just show main cell types
-                        cart_dict_data = chart_dict_data['Main_Cell_Types']
+                        chart_dict_data = chart_dict_data['Main_Cell_Types']
                     
 
                     chart_labels = list(chart_dict_data.keys())
@@ -1300,10 +1325,12 @@ class SlideHeatVis:
 
                 return mini_chart_list
             else:
-                return []
+                #return []
+                raise exceptions.PreventUpdate
         else:
-            return []
-                     
+            #return []
+            raise exceptions.PreventUpdate
+                    
     def gen_cyto(self,cell_val):
 
         cyto_elements = []
@@ -1541,6 +1568,19 @@ class SlideHeatVis:
 
             new_slide = DSASlide(slide_name,slide_id,tile_url,geojson_annotations,image_dims,base_dims)
 
+            pre_slide_properties = new_slide.properties_list
+
+            # Updating available slide_properties to the ones that are implemented as visualizations
+            slide_properties = []
+            for p in pre_slide_properties:
+                if p in self.visualization_properties:
+                    slide_properties.append(p)
+                elif '-->' in p:
+                    main_p = p.split(' --> ')[0]
+                    cell_abbrev = p.split(' --> ')[1]
+                    if main_p in self.visualization_properties:
+                        slide_properties.append(p.replace(cell_abbrev,self.cell_graphics_key[cell_abbrev]['full']))
+
             self.wsi = new_slide
 
             if not self.current_cell in ['max','cluster']:
@@ -1612,8 +1652,8 @@ class SlideHeatVis:
             center_point = [0.5*(map_bounds[0][0]+map_bounds[1][0]),-0.5*(map_bounds[0][1]+map_bounds[1][1])]
 
 
-        self.current_ftus = self.wsi.ftu_names
-        self.current_ftu_layers = self.wsi.ftu_names
+        self.current_ftus = self.wsi.ftu_names+['Spots']
+        self.current_ftu_layers = self.wsi.ftu_names+['Spots']
 
         # Adding the layers to be a property for the edit_control callback
         self.current_overlays = new_children
@@ -1624,7 +1664,7 @@ class SlideHeatVis:
             draw = dict(line=False,circle=False,circlemarker=False)
             )
 
-        return new_url, new_children, center_point, map_bounds, tile_size, new_edit_control
+        return new_url, new_children, center_point, map_bounds, tile_size, new_edit_control, slide_properties
 
     def update_graph(self,ftu,plot,label):
         
@@ -2515,6 +2555,21 @@ def app(*args):
         wsi = DSASlide(slide_name,slide_item_id,slide_url,geojson_annotations,image_dims,base_dims)
         center_point = [0,0]
 
+        pre_slide_properties = wsi.properties_list
+        slide_properties = []
+        visualization_properties = [
+            'Area', 'Arterial Area', 'Average Cell Thickness', 'Average TBM Thickness', 'Cluster',
+            'Luminal Fraction','Main_Cell_Types','Mesangial Area','Mesangial Fraction'
+        ]
+        for p in pre_slide_properties:
+            if p in visualization_properties:
+                slide_properties.append(p)
+            elif '-->' in p:
+                main_p = p.split(' --> ')[0]
+                cell_abbrev = p.split(' --> ')[1]
+                if main_p in visualization_properties:
+                    slide_properties.append(p.replace(cell_abbrev,cell_graphics_key[cell_abbrev]['full']))
+
         map_dict = {
             'url':slide_url,
             'FTUs':{
@@ -2554,7 +2609,7 @@ def app(*args):
 
     layout_handler = LayoutHandler()
     layout_handler.gen_initial_layout(slide_names)
-    layout_handler.gen_vis_layout(cell_names,center_point,map_dict,spot_dict,run_type,tile_size,map_bounds,cli_list)
+    layout_handler.gen_vis_layout(cell_names,center_point,map_dict,spot_dict,slide_properties,run_type,tile_size,map_bounds,cli_list)
     layout_handler.gen_builder_layout(dataset_handler,run_type)
     layout_handler.gen_uploader_layout(dataset_handler)
 

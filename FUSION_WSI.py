@@ -62,6 +62,28 @@ class DSASlide:
 
         self.geojson_spots = {'type':'FeatureCollection','features':[i for i in self.geojson_annotations['features'] if i['properties']['name']=='Spots']}
 
+        # Getting a list of all the properties present in this slide:
+        self.properties_list = []
+        for ftu in self.ftu_names:
+            ftu_props = self.ftu_props[ftu]
+
+            # Iterating through each ftu's properties, checking for sub-dicts
+            f_prop_list = []
+            for f in ftu_props:
+                f_keys = list(f.keys())
+
+                for f_k in f_keys:
+                    # Limiting depth to 1 sub-property (c'mon)
+                    if type(f[f_k])==dict:
+                        f_prop_list.extend([f'{f_k} --> {i}' for i in list(f[f_k].keys())])
+                    else:
+                        f_prop_list.append(f_k)
+            
+            self.properties_list.extend(f_prop_list)
+        
+        self.properties_list = np.unique(self.properties_list)
+
+
     def find_intersecting_spots(self,box_poly):
 
         # Finging intersecting spots
