@@ -26,7 +26,7 @@ import lxml.etree as ET
 from tqdm import tqdm
 
 import shapely
-from shapely.geometry import Polygon, Point, shape
+from shapely.geometry import Polygon, Point, shape, box
 from skimage.draw import polygon
 from skimage.transform import resize
 import geojson
@@ -40,7 +40,7 @@ from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 from matplotlib import cm
 
-from dash import dcc, ctx, Dash, MATCH, ALL, ALLSMALLER, dash_table, exceptions, callback_context
+from dash import dcc, ctx, Dash, MATCH, ALL, ALLSMALLER, dash_table, exceptions, callback_context,no_update
 #from dash.long_callback import DiskcacheLongCallbackManager
 
 import dash_bootstrap_components as dbc
@@ -322,9 +322,19 @@ class SlideHeatVis:
         )(self.update_roi_pie)      
 
         self.app.callback(
-            [Output('cell-graphic','src'),Output('cell-hierarchy','elements')],
-            Input('cell-cards-drop','value'),
+            [Output('cell-graphic','src'),
+             Output('cell-hierarchy','elements'),
+             Output('cell-vis-drop','options'),
+             Output('cell-graphic-name','children')],
+            Input('neph-img','clickData'),
         )(self.update_cell_hierarchy)
+
+        self.app.callback(
+            [Output('neph-tooltip','show'),
+             Output('neph-tooltip','bbox'),
+             Output('neph-tooltip','children')],
+             Input('neph-img','hoverData')
+        )(self.get_neph_hover)
 
         self.app.callback(
             Output({'type':'ftu-state-bar','index':MATCH},'figure'),
@@ -1256,19 +1266,61 @@ class SlideHeatVis:
                         
             return new_children, color_bar
 
-    def update_cell_hierarchy(self,cell_val):
+    def update_cell_hierarchy(self,cell_clickData):
         # Loading the cell-graphic and hierarchy image
-        cell_graphic = './assets/cell_graphic/default_cell_graphic.png'
+        cell_graphic = './assets/cell_graphics/default_cell_graphic.png'
         cell_hierarchy = [
                         {'data': {'id': 'one', 'label': 'Node 1'}, 'position': {'x': 75, 'y': 75}},
                         {'data': {'id': 'two', 'label': 'Node 2'}, 'position': {'x': 200, 'y': 200}},
                         {'data': {'source': 'one', 'target': 'two'}}
                     ]
-        if self.cell_names_key[cell_val] in self.cell_graphics_key:
-            cell_graphic = self.cell_graphics_key[self.cell_names_key[cell_val]]['graphic']
-            cell_hierarchy = self.gen_cyto(self.cell_names_key[cell_val])
+        cell_state_droptions = []
+        cell_name = html.P('Default Cell')
 
-        return cell_graphic, cell_hierarchy
+        # Getting cell_val from the clicked location in the nephron diagram
+        if not cell_clickData is None:
+            
+            pt = cell_clickData['points'][0]
+            click_point = Point(pt['x'],pt['y'])
+
+            # Checking if the clicked point is inside any of the cells bounding boxes
+            possible_cells = [i for i in self.cell_graphics_key if len(self.cell_graphics_key[i]['bbox'])>0]
+            intersecting_cell = [i for i in possible_cells if click_point.intersects(box(*self.cell_graphics_key[i]['bbox']))]
+            
+            if len(intersecting_cell)>0:
+                cell_val = self.cell_graphics_key[intersecting_cell[0]]['full']
+                cell_name = html.P(cell_name)
+                if self.cell_names_key[cell_val] in self.cell_graphics_key:
+                    cell_graphic = self.cell_graphics_key[self.cell_names_key[cell_val]]['graphic']
+                    cell_hierarchy = self.gen_cyto(self.cell_names_key[cell_val])
+                    cell_state_droptions = np.unique(self.cell_graphics_key[self.cell_names_key[cell_val]]['states'])
+
+        return cell_graphic, cell_hierarchy, cell_state_droptions, cell_name
+
+    def get_neph_hover(self,neph_hover):
+
+        if neph_hover is None:
+            return False, no_update, no_update
+        
+        pt = neph_hover['points'][0]
+        tool_bbox = pt['bbox']
+
+        hover_point = Point(pt['x'],pt['y'])
+
+        possible_cells = [i for i in self.cell_graphics_key if len(self.cell_graphics_key[i]['bbox'])>0]
+        intersecting_cell = [i for i in possible_cells if hover_point.intersects(box(*self.cell_graphics_key[i]['bbox']))]
+        if len(intersecting_cell)>0:
+            cell_name = self.cell_graphics_key[intersecting_cell[0]]['full']
+            tool_children = [
+                html.Div([
+                    cell_name
+                ])
+            ]
+        else:
+            tool_children = []
+
+
+        return True, tool_bbox, tool_children
 
     """
     def get_hover(self,ftu_hover):

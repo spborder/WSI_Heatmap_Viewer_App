@@ -174,22 +174,21 @@ class LayoutHandler:
                 'background-fit':'cover',
                 'background-clip':'none',
                 'background-image-opacity':1,
-                #'border-opacity':1,
-                #'border-width':2,
                 'background-image':'data(url)',
                 }
             },
             {
             'selector':'edge',
             'style':{
-                'line-width':35,
+                'line-width':15,
                 'line-color':'blue'
             }
             }
         ]
 
         # Cell card graphic and hierarchy
-        cell_card_types = cell_types.copy()
+        #cell_card_types = cell_types.copy()
+        """
         cell_card = dbc.Card([
             dbc.CardBody([
                 dbc.Row([
@@ -242,7 +241,92 @@ class LayoutHandler:
                 ])
             )
         ])
-        
+        """
+
+        # Creating figure dictionary for nephron diagram
+        neph_figure = go.Figure(px.imshow(Image.open('./assets/cell_graphics/nephron_diagram.jpg')))
+        neph_figure.update_traces(hoverinfo='none',hovertemplate=None)
+        neph_figure.update_xaxis(showticklabels=False)
+        neph_figure.update_yaxis(showticklabels=False)
+
+        cell_card = dbc.Card([
+            dbc.CardBody([
+                dbc.Row([
+                    dbc.Col([
+                        dcc.Graph(id='neph-img',figure = neph_figure),
+                        dcc.Tooltip(id='neph-tooltip',loading_text='')
+                    ],md=6),
+                    dbc.Col([
+                        dbc.Row([
+                            dbc.Card([
+                                dbc.CardHeader('Cell Graphic'),
+                                dbc.CardBody([
+                                    dbc.Row([
+                                        dbc.Col([
+                                            dcc.Dropdown(['Cell States'],id='cell-vis-drop')
+                                        ],md=4),
+                                        dbc.Col([
+                                            html.Div(id='cell-graphic-name'),
+                                            html.Div(
+                                                id='cell-vis-graphic',
+                                                children = [
+                                                    html.Img(
+                                                        id = 'cell-graphic',
+                                                        src = './assets/cell_graphics/default_cell_graphic.png',
+                                                        height = '80%',
+                                                        width = '100%'
+                                                    )
+                                                ])
+                                        ],md=8)
+                                    ])
+                                ])
+                            ])
+                        ],align='center'),
+                        dbc.Row([
+                            dbc.Card([
+                                dbc.CardHeader('Cell Hierarchy'),
+                                dbc.CardBody([
+                                    dbc.Row(
+                                        dbc.Col([
+                                            html.Div(
+                                                cyto.Cytoscape(
+                                                    id = 'cell-hierarchy',
+                                                    layout = {'name':'preset'},
+                                                    style = {'width':'100%','height':'300px'},
+                                                    minZoom=0.5,
+                                                    maxZoom=3,
+                                                    stylesheet=cyto_style,
+                                                    elements = [
+                                                        {'data': {'id': 'one', 'label': 'Node 1'}, 'position': {'x': 75, 'y': 75}},
+                                                        {'data': {'id': 'two', 'label': 'Node 2'}, 'position': {'x': 200, 'y': 200}},
+                                                        {'data': {'source': 'one', 'target': 'two'}}
+                                                        ]
+                                                )
+                                            )
+                                        ],md=12)
+                                    ),
+                                    dbc.Row(self.gen_info_button('Pan and click nodes with the mouse for more information!')),
+                                    dbc.Row(html.Div(id = 'label-p')),
+                                    dbc.Row(html.Div(id='id-p')),
+                                    dbc.Row(html.Div(id='notes-p'))
+                                ])
+                            ])
+                        ],align='center')
+                    ],md=6)
+                ],align='center')
+            ]),
+            dbc.CardFooter(
+                dbc.Row([
+                    dbc.Col([
+                        html.Div([
+                            dcc.Link('Derived from ASCT+B Kidney v1.2',href='https://docs.google.com/spreadsheets/d/1NMfu1bEGNFcTYTFT-jCao_lSbFD8n0ti630iIpRj-hw/edit#gid=949267305')
+                        ])
+                    ])
+                ])
+            )
+        ])
+
+
         ftu_list = ['glomerulus','Tubules']
         plot_types = ['TSNE','UMAP']
         labels = ['Cluster','image_id']+cell_types.copy()
