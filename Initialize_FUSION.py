@@ -136,7 +136,7 @@ class LayoutHandler:
         else:
             map_layer = dl.Map(
                 center = center_point, zoom = 2, minZoom = 0, maxZoom = 7, crs='Simple',bounds = map_bounds,
-                style = {'width':'100%','height':'80vh','margin':'auto','display':'inline-block'},
+                style = {'width':'100%','height':'100vh','margin':'auto','display':'inline-block'},
                 id = 'slide-map',
                 children = map_children
             )
@@ -246,8 +246,9 @@ class LayoutHandler:
         # Creating figure dictionary for nephron diagram
         neph_figure = go.Figure(px.imshow(Image.open('./assets/cell_graphics/nephron_diagram.jpg')))
         neph_figure.update_traces(hoverinfo='none',hovertemplate=None)
-        neph_figure.update_xaxis(showticklabels=False)
-        neph_figure.update_yaxis(showticklabels=False)
+        neph_figure.update_xaxes(showticklabels=False)
+        neph_figure.update_yaxes(showticklabels=False)
+        neph_figure.update_layout(margin={'l':0,'b':0,'r':0,'t':0})
 
         cell_card = dbc.Card([
             dbc.CardBody([
@@ -255,30 +256,36 @@ class LayoutHandler:
                     dbc.Col([
                         dcc.Graph(id='neph-img',figure = neph_figure),
                         dcc.Tooltip(id='neph-tooltip',loading_text='')
-                    ],md=6),
+                    ],md=5),
                     dbc.Col([
                         dbc.Row([
                             dbc.Card([
                                 dbc.CardHeader('Cell Graphic'),
                                 dbc.CardBody([
                                     dbc.Row([
-                                        dbc.Col([
-                                            dcc.Dropdown(['Cell States'],id='cell-vis-drop')
-                                        ],md=4),
-                                        dbc.Col([
-                                            html.Div(id='cell-graphic-name'),
+                                        dbc.Row([
+                                            dbc.Col([
+                                                dbc.Label('Cell States:',html_for='cell-vis-drop'),
+                                                dcc.Dropdown(['Cell States'],placeholder='Available Cell States',id='cell-vis-drop')
+                                            ],md=4),
+                                            dbc.Col([
+                                                html.Div(id='cell-graphic-name')
+                                            ],md=8)
+                                        ],align='center'),
+                                        html.Hr(),
+                                        dbc.Row([
                                             html.Div(
                                                 id='cell-vis-graphic',
                                                 children = [
                                                     html.Img(
                                                         id = 'cell-graphic',
                                                         src = './assets/cell_graphics/default_cell_graphic.png',
-                                                        height = '80%',
+                                                        height = '100%',
                                                         width = '100%'
                                                     )
                                                 ])
-                                        ],md=8)
-                                    ])
+                                        ])
+                                    ],align='center')
                                 ])
                             ])
                         ],align='center'),
@@ -312,7 +319,7 @@ class LayoutHandler:
                                 ])
                             ])
                         ],align='center')
-                    ],md=6)
+                    ],md=7)
                 ],align='center')
             ]),
             dbc.CardFooter(
